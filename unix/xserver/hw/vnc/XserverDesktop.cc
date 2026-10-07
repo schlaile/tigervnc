@@ -243,6 +243,15 @@ void XserverDesktop::setDesktopName(const char* name)
   }
 }
 
+void XserverDesktop::setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint)
+{
+  try {
+    server->setDesktopEndpoint(endpoint);
+  } catch (std::exception& e) {
+    vlog.error("XserverDesktop::setDesktopEndpoint: %s",e.what());
+  }
+}
+
 void XserverDesktop::setCursor(int width, int height, int hotX, int hotY,
                                const unsigned char *rgbaData)
 {
