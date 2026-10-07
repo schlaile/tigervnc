@@ -33,6 +33,7 @@
 
 #include <core/Timer.h>
 
+#include <rfb/DesktopEndpoint.h>
 #include <rfb/SDesktop.h>
 #include <rfb/PixelBuffer.h>
 
@@ -70,6 +71,7 @@ public:
   void bell();
   void setLEDState(unsigned int state);
   void setDesktopName(const char* name);
+  void setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint);
   void setCursor(int width, int height, int hotX, int hotY,
                  const unsigned char *rgbaData);
   void setCursorPos(int x, int y, bool warped);

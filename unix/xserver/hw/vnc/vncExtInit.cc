@@ -25,7 +25,9 @@
 #include <sys/types.h>
 #include <pwd.h>
 
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include <core/Configuration.h>
 #include <core/Logger_stdio.h>
@@ -80,6 +82,10 @@ core::IntParameter
 core::StringParameter
   desktopName("desktop",
               _("Name of VNC desktop"), defaultDesktopName());
+core::StringParameter
+  fileDropEndpoint("FileDropEndpoint",
+                   _("Side channel for files dropped onto the viewer, set by "
+                     "the desktop session: [samehost ]URL TOKEN"), "");
 core::BoolParameter
   localhostOnly("localhost",
                 _("Only allow connections from localhost"), false);
@@ -95,7 +101,8 @@ core::StringListParameter
                 _("Comma separated list of parameters that are allowed "
                   "to be modified after startup"),
                 {"desktop", "AcceptPointerEvents", "SendCutText",
-                 "AcceptCutText", "SendPrimary", "SetPrimary"});
+                 "AcceptCutText", "SendPrimary", "SetPrimary",
+                 "FileDropEndpoint"});
 core::BoolParameter
   setPrimary("SetPrimary",
              // TRANSLATORS: This refers to the two different X11
@@ -267,6 +274,9 @@ void vncExtensionInit(void)
                                           vncFbstride[scr]);
         vlog.info(_("Created VNC server for screen %d"), scr);
 
+        if (strlen(fileDropEndpoint) > 0)
+          vncUpdateFileDropEndpoint();
+
         if (scr == 0 && vncInetdSock != -1 && listeners.empty()) {
           network::Socket* sock = new network::TcpSocket(vncInetdSock);
           if (!desktop[scr]->addClient(sock, false, false)) {
@@ -329,6 +339,46 @@ void vncUpdateDesktopName(void)
 {
   for (int scr = 0; scr < vncGetScreenCount(); scr++)
     desktop[scr]->setDesktopName(desktopName);
+}
+
+// "[samehost ]URL TOKEN", empty: withdrawn
+static rfb::DesktopEndpoint parseFileDropEndpoint(const char* value)
+{
+  rfb::DesktopEndpoint endpoint;
+  std::istringstream in(value);
+  std::vector<std::string> words;
+  std::string word;
+  size_t first = 0;
+
+  endpoint.service = "file-drop";
+
+  while (in >> word)
+    words.push_back(word);
+
+  if (!words.empty() && words[0] == "samehost") {
+    endpoint.flags |= rfb::desktopEndpointSameHost;
+    first = 1;
+  }
+
+  if (words.size() - first == 2) {
+    endpoint.url = words[first];
+    endpoint.token.assign(words[first + 1].begin(), words[first + 1].end());
+  } else if (words.size() != 0) {
+    vlog.error(_("Invalid FileDropEndpoint, expected "
+                 "\"[samehost ]URL TOKEN\""));
+  }
+
+  return endpoint;
+}
+
+void vncUpdateFileDropEndpoint(void)
+{
+  rfb::DesktopEndpoint endpoint(parseFileDropEndpoint(fileDropEndpoint));
+
+  for (int scr = 0; scr < vncGetScreenCount(); scr++) {
+    if (desktop[scr] != nullptr)
+      desktop[scr]->setDesktopEndpoint(endpoint);
+  }
 }
 
 void vncRequestClipboard(void)
