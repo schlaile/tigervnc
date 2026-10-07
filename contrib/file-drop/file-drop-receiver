@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+#
+# Copyright 2026 Peter Schlaile
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this software; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
+# USA.
+
+"""Generic receiver for VNC File Drop (doc/file-drop.md).
+
+Run it in the desktop session. It serves the endpoint, announces it to the
+VNC server with vncconfig, accepts every dropped file and saves it to a
+directory (default ~/Downloads).
+
+    file-drop-receiver [--port 5560] [--dir ~/Downloads] [--accept '*.jpg,*.pdf']
+                       [--no-announce]
+    file-drop-receiver --open URL [NAME]   ask the viewers to open URL
+
+Plain HTTP; put it behind a TLS proxy, or use it on trusted networks only.
+"""
+
+import argparse
+import fnmatch
+import hashlib
+import http.server
+import json
+import os
+import queue
+import re
+import secrets
+import socket
+import socketserver
+import subprocess
+import sys
+import threading
+import time
+
+TUS_VERSION = "1.0.0"
+OFFER_TTL = 3600
+CHUNK = 1 << 16
+
+
+class State:
+    def __init__(self, directory, token, accept):
+        self.directory = directory
+        self.accept = accept
+        self.token = token
+        self.lock = threading.Lock()
+        self.uploads = {}      # id -> dict
+        self.listeners = []    # queues of open event streams
+
+    def broadcast(self, event, data):
+        with self.lock:
+            for q in self.listeners:
+                q.put((event, data))
+
+
+def safe_name(name):
+    name = os.path.basename(name.replace("\\", "/"))
+    name = re.sub(r"[\x00-\x1f/]", "_", name).strip(". ") or "file"
+    return name[:200]
+
+
+def unique_path(directory, name):
+    base, ext = os.path.splitext(name)
+    path = os.path.join(directory, name)
+    n = 1
+    while os.path.exists(path):
+        path = os.path.join(directory, "%s (%d)%s" % (base, n, ext))
+        n += 1
+    return path
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "file-drop-receiver"
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
+
+    @property
+    def state(self):
+        return self.server.state
+
+    def reply(self, status, body=b"", ctype=None, headers=()):
+        self.send_response(status)
+        for k, v in headers:
+            self.send_header(k, v)
+        if ctype:
+            self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body and self.command != "HEAD":
+            self.wfile.write(body)
+
+    def json_reply(self, status, obj):
+        self.reply(status, json.dumps(obj).encode(), "application/json")
+
+    def bearer(self):
+        auth = self.headers.get("Authorization", "")
+        return auth[7:] if auth.lower().startswith("bearer ") else ""
+
+    def read_body(self, limit):
+        length = int(self.headers.get("Content-Length", "-1"))
+        if length < 0 or length > limit:
+            return None
+        return self.rfile.read(length)
+
+    # endpoint: POST offers, GET events
+    def endpoint_auth(self):
+        if not secrets.compare_digest(self.bearer(), self.state.token):
+            self.json_reply(401, {"error": "invalid token"})
+            return False
+        return True
+
+    def do_POST(self):
+        if self.path != "/desktop/offers":
+            return self.json_reply(404, {"error": "not found"})
+        if not self.endpoint_auth():
+            return
+        body = self.read_body(1 << 20)
+        try:
+            offer = json.loads(body)
+            files = offer["files"]
+        except Exception:
+            return self.json_reply(400, {"error": "invalid offer"})
+        result = []
+        for f in files:
+            try:
+                name = safe_name(str(f["name"]))
+                size = int(f["size"])
+                sha = str(f["sha256"]).lower()
+                if size < 0 or not re.fullmatch(r"[0-9a-f]{64}", sha):
+                    raise ValueError
+            except Exception:
+                result.append({"result": "reject", "reason": "Invalid file"})
+                continue
+            if not any(fnmatch.fnmatch(name.lower(), p)
+                       for p in self.state.accept):
+                result.append({"result": "reject",
+                               "reason": "Only %s accepted here"
+                               % ", ".join(self.state.accept)})
+                continue
+            uid = secrets.token_hex(16)
+            utoken = secrets.token_hex(16)
+            with self.state.lock:
+                self.state.uploads[uid] = {
+                    "token": utoken, "name": name, "size": size,
+                    "sha256": sha, "offset": 0,
+                    "part": os.path.join(self.state.directory,
+                                         ".file-drop-" + uid),
+                    "expires": time.time() + OFFER_TTL, "busy": False,
+                }
+            result.append({"result": "accept",
+                           "upload": {"url": "/files/" + uid,
+                                      "token": utoken}})
+        self.log_message("offer at %s,%s: %d file(s)",
+                         offer.get("x"), offer.get("y"), len(files))
+        self.json_reply(200, {"files": result})
+
+    def do_GET(self):
+        if self.path != "/desktop/events":
+            return self.json_reply(404, {"error": "not found"})
+        if not self.endpoint_auth():
+            return
+        q = queue.Queue()
+        with self.state.lock:
+            self.state.listeners.append(q)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.close_connection = True
+        try:
+            while True:
+                try:
+                    event, data = q.get(timeout=20)
+                    msg = "event: %s\ndata: %s\n\n" % (event, json.dumps(data))
+                except queue.Empty:
+                    msg = ": ping\n\n"
+                self.wfile.write(msg.encode())
+                self.wfile.flush()
+        except OSError:
+            pass
+        finally:
+            with self.state.lock:
+                self.state.listeners.remove(q)
+
+    # tus core protocol on /files/<id>
+    def upload(self):
+        m = re.fullmatch(r"/files/([0-9a-f]{32})", self.path)
+        if not m:
+            return None
+        with self.state.lock:
+            u = self.state.uploads.get(m.group(1))
+        if u is None or not secrets.compare_digest(self.bearer(), u["token"]):
+            return None
+        return u
+
+    def tus_headers(self, u):
+        return [("Tus-Resumable", TUS_VERSION),
+                ("Upload-Offset", str(u["offset"])),
+                ("Upload-Length", str(u["size"]))]
+
+    def do_OPTIONS(self):
+        self.reply(204, headers=[("Tus-Resumable", TUS_VERSION),
+                                 ("Tus-Version", TUS_VERSION)])
+
+    def do_HEAD(self):
+        u = self.upload()
+        if u is None:
+            return self.reply(404)
+        self.reply(200, headers=self.tus_headers(u))
+
+    def do_PATCH(self):
+        u = self.upload()
+        if u is None:
+            self.close_connection = True
+            return self.reply(404)
+        if self.headers.get("Content-Type") != "application/offset+octet-stream":
+            self.close_connection = True
+            return self.reply(415)
+        length = int(self.headers.get("Content-Length", "-1"))
+        offset = int(self.headers.get("Upload-Offset", "-1"))
+        if offset != u["offset"]:
+            self.close_connection = True
+            return self.reply(409, headers=self.tus_headers(u))
+        if length < 0 or offset + length > u["size"]:
+            self.close_connection = True
+            return self.reply(413)
+        with self.state.lock:
+            if u["busy"]:
+                self.close_connection = True
+                return self.reply(423)
+            u["busy"] = True
+        try:
+            with open(u["part"], "ab") as f:
+                left = length
+                while left > 0:
+                    data = self.rfile.read(min(CHUNK, left))
+                    if not data:
+                        break
+                    f.write(data)
+                    left -= len(data)
+            u["offset"] = os.path.getsize(u["part"])
+        finally:
+            u["busy"] = False
+        if u["offset"] < offset + length:
+            self.close_connection = True
+            return
+        if u["offset"] == u["size"]:
+            return self.finish_upload(u)
+        self.reply(204, headers=self.tus_headers(u))
+
+    def finish_upload(self, u):
+        h = hashlib.sha256()
+        with open(u["part"], "rb") as f:
+            for block in iter(lambda: f.read(CHUNK), b""):
+                h.update(block)
+        if h.hexdigest() != u["sha256"]:
+            os.unlink(u["part"])
+            u["offset"] = 0
+            return self.reply(460, headers=[("Tus-Resumable", TUS_VERSION)])
+        path = unique_path(self.state.directory, u["name"])
+        os.rename(u["part"], path)
+        self.log_message("saved %s", path)
+        self.reply(204, headers=self.tus_headers(u))
+
+
+class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    address_family = socket.AF_INET6
+
+
+def control_path():
+    run = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
+    display = os.environ.get("DISPLAY", "").replace("/", "_")
+    return os.path.join(run, "file-drop-receiver%s.sock" % display)
+
+
+def control_loop(state, path):
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    s = socket.socket(socket.AF_UNIX)
+    s.bind(path)
+    os.chmod(path, 0o600)
+    s.listen(4)
+    while True:
+        c, _ = s.accept()
+        with c:
+            line = c.makefile().readline().strip()
+            parts = line.split(" ", 2)
+            if len(parts) >= 2 and parts[0] == "open":
+                state.broadcast("open", {"url": parts[1],
+                                         "name": parts[2] if len(parts) > 2 else ""})
+
+
+def vncconfig_set(value):
+    subprocess.run(["vncconfig", "-set", "FileDropEndpoint=" + value],
+                   check=False)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--port", type=int, default=5560)
+    ap.add_argument("--dir", default=os.path.expanduser("~/Downloads"))
+    ap.add_argument("--accept", default="*",
+                    help="comma-separated file name patterns to accept")
+    ap.add_argument("--no-announce", action="store_true",
+                    help="only print the FileDropEndpoint value")
+    ap.add_argument("--open", nargs="+", metavar=("URL", "NAME"))
+    args = ap.parse_args()
+
+    if args.open:
+        s = socket.socket(socket.AF_UNIX)
+        s.connect(control_path())
+        s.sendall(("open %s\n" % " ".join(args.open)).encode())
+        return
+
+    os.makedirs(args.dir, exist_ok=True)
+    accept = [p.strip().lower() for p in args.accept.split(",") if p.strip()]
+    state = State(args.dir, secrets.token_hex(24), accept)
+    server = Server(("::", args.port), Handler)
+    server.state = state
+    threading.Thread(target=control_loop, args=(state, control_path()),
+                     daemon=True).start()
+
+    value = "samehost http://localhost:%d/desktop/ %s" % (args.port, state.token)
+    if args.no_announce:
+        print("FileDropEndpoint=" + value, flush=True)
+    else:
+        vncconfig_set(value)
+    try:
+        server.serve_forever()
+    finally:
+        if not args.no_announce:
+            vncconfig_set("")
+
+
+if __name__ == "__main__":
+    main()

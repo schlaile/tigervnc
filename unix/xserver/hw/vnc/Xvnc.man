@@ -37,6 +37,15 @@ other possible values are 16 and 32. Anything else is likely to cause strange
 behaviour by applications and may prevent the server from starting at all.
 .
 .TP
+.B \-FileDropEndpoint \fI[samehost ]URL TOKEN\fP
+Announce a side channel to viewers that support it, where files dropped onto
+the viewer are offered and uploaded (see doc/file-drop.md). It is normally set
+by the desktop session at run time, for example with
+\fBvncconfig \-set FileDropEndpoint=...\fP. With \fBsamehost\fP, viewers
+replace the host of the URL with the host they used to connect. An empty value
+withdraws the endpoint. Default is empty.
+.
+.TP
 .B \-geometry \fIwidth\fPx\fIheight\fP
 Specify the size of the desktop to be created. Default is 1024x768.
 .
