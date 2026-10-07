@@ -79,6 +79,7 @@ namespace rfb {
     void setCursorOrClose();
     void bellOrClose();
     void setDesktopNameOrClose(const char *name);
+    void setDesktopEndpointOrClose(const DesktopEndpoint& endpoint);
     void setLEDStateOrClose(unsigned int state);
     void approveConnectionOrClose(bool accept, const char* reason);
     void requestClipboardOrClose();
@@ -146,6 +147,7 @@ namespace rfb {
     void supportsFence() override;
     void supportsContinuousUpdates() override;
     void supportsLEDState() override;
+    void supportsDesktopEndpoint() override;
 
     // Timer callbacks
     void handleTimeout(core::Timer* t) override;

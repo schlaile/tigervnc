@@ -316,6 +316,7 @@ namespace rfb {
     bool supportsDesktopResize;
     bool supportsLEDState;
     bool supportsAudio;
+    bool supportsDesktopEndpoint;
 
   private:
     bool processVersionMsg();

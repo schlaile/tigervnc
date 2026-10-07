@@ -26,6 +26,7 @@
 #include <list>
 
 #include <rfb/AccessRights.h>
+#include <rfb/DesktopEndpoint.h>
 #include <rfb/UpdateTracker.h>
 
 namespace network { class Socket; }
@@ -147,6 +148,11 @@ namespace rfb {
 
     // setName() tells the server what desktop title to supply to clients
     virtual void setName(const char* name) = 0;
+
+    // setDesktopEndpoint() tells the server about a side-channel service
+    // of the desktop, to be announced to clients that support it. An
+    // endpoint with an empty URL withdraws the service.
+    virtual void setDesktopEndpoint(const DesktopEndpoint& endpoint) = 0;
 
     // setLEDState() tells the server what the current lock keys LED
     // state is

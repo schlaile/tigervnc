@@ -317,6 +317,20 @@ void VNCSConnectionST::setDesktopNameOrClose(const char *name)
   }
 }
 
+void VNCSConnectionST::setDesktopEndpointOrClose(const DesktopEndpoint& endpoint)
+{
+  try {
+    if (state() != RFBSTATE_NORMAL)
+      return;
+    if (!client.supportsEncoding(pseudoEncodingDesktopEndpoint))
+      return;
+    writer()->writeDesktopEndpoint(endpoint);
+    writeFramebufferUpdate();
+  } catch(std::exception& e) {
+    close(e.what());
+  }
+}
+
 void VNCSConnectionST::setCursorOrClose()
 {
   try {
@@ -839,6 +853,12 @@ void VNCSConnectionST::supportsLEDState()
     return;
 
   writer()->writeLEDState();
+}
+
+void VNCSConnectionST::supportsDesktopEndpoint()
+{
+  for (const DesktopEndpoint& endpoint : server->getDesktopEndpoints())
+    writer()->writeDesktopEndpoint(endpoint);
 }
 
 void VNCSConnectionST::handleTimeout(core::Timer* t)

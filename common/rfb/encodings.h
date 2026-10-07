@@ -71,6 +71,10 @@ namespace rfb {
   // UltraVNC-specific
   const int pseudoEncodingExtendedClipboard = 0xC0A1E5CE;
 
+  // Side-channel endpoint of the desktop (doc/file-drop.md); private
+  // value until a number is registered
+  const int pseudoEncodingDesktopEndpoint = 0x46445031;
+
   int encodingNum(const char* name);
   const char* encodingName(int num);
 }

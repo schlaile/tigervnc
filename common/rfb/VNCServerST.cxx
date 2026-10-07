@@ -460,6 +460,23 @@ void VNCServerST::setName(const char* name_)
     (*ci)->setDesktopNameOrClose(name_);
 }
 
+void VNCServerST::setDesktopEndpoint(const DesktopEndpoint& endpoint)
+{
+  std::list<DesktopEndpoint>::iterator ei;
+  for (ei = desktopEndpoints.begin(); ei != desktopEndpoints.end(); ++ei) {
+    if (ei->service == endpoint.service)
+      break;
+  }
+  if (ei != desktopEndpoints.end())
+    desktopEndpoints.erase(ei);
+  if (!endpoint.withdrawn())
+    desktopEndpoints.push_back(endpoint);
+
+  std::list<VNCSConnectionST*>::iterator ci;
+  for (ci = clients.begin(); ci != clients.end(); ++ci)
+    (*ci)->setDesktopEndpointOrClose(endpoint);
+}
+
 void VNCServerST::add_changed(const core::Region& region)
 {
   if (comparer == nullptr)

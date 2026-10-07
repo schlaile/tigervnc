@@ -23,6 +23,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <vector>
 
@@ -255,6 +256,10 @@ bool CMsgReader::readMsg()
     case pseudoEncodingDesktopName:
       ret = readSetDesktopName(dataRect.tl.x, dataRect.tl.y,
                                dataRect.width(), dataRect.height());
+      break;
+    case pseudoEncodingDesktopEndpoint:
+      ret = readDesktopEndpoint(dataRect.tl.x, dataRect.tl.y,
+                                dataRect.width(), dataRect.height());
       break;
     case pseudoEncodingDesktopSize:
       handler->setDesktopSize(dataRect.width(), dataRect.height());
@@ -872,6 +877,69 @@ bool CMsgReader::readSetDesktopName(int x, int y, int w, int h)
   }
 
   handler->setName(name.data());
+
+  return true;
+}
+
+bool CMsgReader::readDesktopEndpoint(int x, int y, int w, int h)
+{
+  uint8_t version;
+  uint16_t len;
+  DesktopEndpoint endpoint;
+  std::vector<char> service, url;
+
+  if (!is->hasData(1 + 1 + 2 + 2))
+    return false;
+
+  is->setRestorePoint();
+
+  version = is->readU8();
+  endpoint.flags = is->readU8();
+  is->skip(2);
+
+  len = is->readU16();
+  if (!is->hasDataOrRestore(len + 2))
+    return false;
+  service.resize(len + 1);
+  is->readBytes((uint8_t*)service.data(), len);
+  service[len] = '\0';
+
+  len = is->readU16();
+  if (!is->hasDataOrRestore(len + 2))
+    return false;
+  url.resize(len + 1);
+  is->readBytes((uint8_t*)url.data(), len);
+  url[len] = '\0';
+
+  len = is->readU16();
+  if (!is->hasDataOrRestore(len))
+    return false;
+  is->clearRestorePoint();
+  endpoint.token.resize(len);
+  is->readBytes(endpoint.token.data(), len);
+
+  // The framing above stays the same in later versions; only the
+  // meaning of the fields may change
+  if (version != desktopEndpointVersion) {
+    vlog.info(_("Ignoring desktop endpoint of unknown version %d"),
+              (int)version);
+    return true;
+  }
+
+  if (x || y || w || h ||
+      strlen(service.data()) > desktopEndpointMaxService ||
+      strlen(url.data()) > desktopEndpointMaxURL ||
+      endpoint.token.size() > desktopEndpointMaxToken ||
+      !core::isValidUTF8(service.data()) ||
+      !core::isValidUTF8(url.data())) {
+    vlog.error(_("Invalid desktop endpoint received"));
+    return true;
+  }
+
+  endpoint.service = service.data();
+  endpoint.url = url.data();
+
+  handler->setDesktopEndpoint(endpoint);
 
   return true;
 }

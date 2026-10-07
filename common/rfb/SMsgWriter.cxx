@@ -268,6 +268,14 @@ void SMsgWriter::writeSetDesktopName()
   needSetDesktopName = true;
 }
 
+void SMsgWriter::writeDesktopEndpoint(const DesktopEndpoint& endpoint)
+{
+  if (!client->supportsEncoding(pseudoEncodingDesktopEndpoint))
+    throw std::logic_error("Client does not support desktop endpoints");
+
+  desktopEndpointMsgs.push_back(endpoint);
+}
+
 void SMsgWriter::writeCursor()
 {
   if (!client->supportsEncoding(pseudoEncodingCursor) &&
@@ -317,6 +325,8 @@ void SMsgWriter::writeExtendedMouseButtonsSupport()
 bool SMsgWriter::needFakeUpdate()
 {
   if (needSetDesktopName)
+    return true;
+  if (!desktopEndpointMsgs.empty())
     return true;
   if (needCursor)
     return true;
@@ -368,6 +378,7 @@ void SMsgWriter::writeFramebufferUpdateStart(int nRects)
   if (nRects != 0xFFFF) {
     if (needSetDesktopName)
       nRects++;
+    nRects += desktopEndpointMsgs.size();
     if (needCursor)
       nRects++;
     if (needCursorPos)
@@ -508,6 +519,10 @@ void SMsgWriter::writePseudoRects()
     needSetDesktopName = false;
   }
 
+  for (const DesktopEndpoint& endpoint : desktopEndpointMsgs)
+    writeDesktopEndpointRect(endpoint);
+  desktopEndpointMsgs.clear();
+
   if (needLEDState) {
     writeLEDStateRect(client->ledState());
     needLEDState = false;
@@ -606,6 +621,34 @@ void SMsgWriter::writeSetDesktopNameRect(const char *name)
   os->writeU32(pseudoEncodingDesktopName);
   os->writeU32(strlen(name));
   os->writeBytes((const uint8_t*)name, strlen(name));
+}
+
+void SMsgWriter::writeDesktopEndpointRect(const DesktopEndpoint& endpoint)
+{
+  if (!client->supportsEncoding(pseudoEncodingDesktopEndpoint))
+    throw std::logic_error("Client does not support desktop endpoints");
+  if (++nRectsInUpdate > nRectsInHeader && nRectsInHeader)
+    throw std::logic_error("SMsgWriter::writeDesktopEndpointRect: nRects out of sync");
+  if (endpoint.service.size() > desktopEndpointMaxService ||
+      endpoint.url.size() > desktopEndpointMaxURL ||
+      endpoint.token.size() > desktopEndpointMaxToken)
+    throw std::logic_error("SMsgWriter::writeDesktopEndpointRect: endpoint too long");
+
+  os->writeS16(0);
+  os->writeS16(0);
+  os->writeU16(0);
+  os->writeU16(0);
+  os->writeU32(pseudoEncodingDesktopEndpoint);
+  os->writeU8(desktopEndpointVersion);
+  os->writeU8(endpoint.flags);
+  os->pad(2);
+  os->writeU16(endpoint.service.size());
+  os->writeBytes((const uint8_t*)endpoint.service.data(),
+                 endpoint.service.size());
+  os->writeU16(endpoint.url.size());
+  os->writeBytes((const uint8_t*)endpoint.url.data(), endpoint.url.size());
+  os->writeU16(endpoint.token.size());
+  os->writeBytes(endpoint.token.data(), endpoint.token.size());
 }
 
 void SMsgWriter::writeSetCursorRect(int width, int height,

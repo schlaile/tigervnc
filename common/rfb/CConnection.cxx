@@ -73,7 +73,7 @@ CConnection::CConnection()
   : csecurity(nullptr),
     supportsLocalCursor(false), supportsCursorPosition(false),
     supportsDesktopResize(false), supportsLEDState(false),
-    supportsAudio(false),
+    supportsAudio(false), supportsDesktopEndpoint(false),
     is(nullptr), os(nullptr), reader_(nullptr), writer_(nullptr),
     shared(false),
     state_(RFBSTATE_UNINITIALISED),
@@ -1100,6 +1100,8 @@ void CConnection::updateEncodings()
   }
   if (supportsAudio)
     encodings.push_back(pseudoEncodingQEMUAudio);
+  if (supportsDesktopEndpoint)
+    encodings.push_back(pseudoEncodingDesktopEndpoint);
 
   encodings.push_back(pseudoEncodingDesktopName);
   encodings.push_back(pseudoEncodingLastRect);

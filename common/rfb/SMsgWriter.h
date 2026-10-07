@@ -25,6 +25,10 @@
 
 #include <stdint.h>
 
+#include <list>
+
+#include <rfb/DesktopEndpoint.h>
+
 namespace core { struct Rect; }
 
 namespace rdr { class OutStream; }
@@ -78,6 +82,10 @@ namespace rfb {
     void writeDesktopSize(uint16_t reason, uint16_t result=0);
 
     void writeSetDesktopName();
+
+    // writeDesktopEndpoint() announces (or withdraws) a side-channel
+    // endpoint as part of the next update.
+    void writeDesktopEndpoint(const DesktopEndpoint& endpoint);
 
     // Like setDesktopSize, we can't just write out a cursor message
     // immediately. 
@@ -135,6 +143,7 @@ namespace rfb {
                                       int fb_width, int fb_height,
                                       const ScreenSet& layout);
     void writeSetDesktopNameRect(const char *name);
+    void writeDesktopEndpointRect(const DesktopEndpoint& endpoint);
     void writeSetCursorRect(int width, int height,
                             int hotspotX, int hotspotY,
                             const uint8_t* data, const uint8_t* mask);
@@ -170,6 +179,8 @@ namespace rfb {
     } ExtendedDesktopSizeMsg;
 
     std::list<ExtendedDesktopSizeMsg> extendedDesktopSizeMsgs;
+
+    std::list<DesktopEndpoint> desktopEndpointMsgs;
   };
 }
 #endif
