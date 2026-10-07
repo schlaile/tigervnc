@@ -40,6 +40,26 @@ for example, forwards local drives over SSH next to the VNC connection.
 This proposal keeps RFB unchanged except for one announcement, and leaves the
 meaning of a drop to the desktop.
 
+## Prior art
+
+- **In-band file transfer.** TightVNC and UltraVNC define their own file
+  transfer messages (message types 7 and 130 to 136 in the RFB registry).
+  They are incompatible with each other, and they have the drawbacks
+  described above.
+- **Extended Clipboard.** The Extended Clipboard pseudo-encoding, which
+  TigerVNC implements, reserves a format bit for files, specified as
+  "currently reserved but not defined". Copying files through the clipboard
+  is a different interaction from dropping them at a position; a future
+  version of this proposal could fill that format with offers to the same
+  side channel.
+- **RealVNC** offers file transfer in its own products: a file manager, and
+  copy and paste of files when both ends run Windows. The protocol is not
+  published.
+- **ThinLinc** (Cendio) forwards local drives over SSH next to the VNC
+  connection: a side channel, like this proposal.
+
+None of these lets the application under the pointer decide about a drop.
+
 ## Overview
 
 ```
@@ -247,9 +267,11 @@ the client stops until the next announcement.
 
 ## Registration
 
-The pseudo-encoding number is to be registered in the
-[RFB protocol registry](https://github.com/rfbproto/rfbproto). Until then,
-implementations use a private value and treat this document as a draft.
+The pseudo-encoding number is to be registered. The official list of RFB
+numbers is kept by IANA; the community specification
+([rfbproto](https://github.com/rfbproto/rfbproto)) documents them. Until a
+number is assigned, implementations use a private value and treat this
+document as a draft.
 
 ## Open questions
 
