@@ -131,7 +131,12 @@ reports drops as failed.
 
 The service name lets other side-channel services use the same encoding later.
 A server sends one rectangle per service. Clients ignore services they do not
-know and versions above the ones they implement.
+know and versions above the ones they implement. Later versions keep the
+framing above (the three length-prefixed fields), so that a client can always
+skip a rectangle it does not understand.
+
+Until a number is assigned, the implementation uses the private value
+`0x46445031`.
 
 ### The VNC server
 

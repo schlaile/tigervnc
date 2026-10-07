@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 
+#include <rfb/DesktopEndpoint.h>
 #include <rfb/ServerParams.h>
 
 namespace core {
@@ -52,6 +53,9 @@ namespace rfb {
                            const uint8_t* data) = 0;
     virtual void setCursorPos(const core::Point& pos) = 0;
     virtual void setName(const char* name) = 0;
+    // A side-channel endpoint was announced or withdrawn (see
+    // doc/file-drop.md); clients that do not use endpoints ignore it
+    virtual void setDesktopEndpoint(const DesktopEndpoint& /*endpoint*/) {}
     virtual void fence(uint32_t flags, unsigned len,
                        const uint8_t data[]) = 0;
     virtual void endOfContinuousUpdates() = 0;

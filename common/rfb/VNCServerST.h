@@ -31,6 +31,7 @@
 #include <rfb/VNCServer.h>
 #include <rfb/Blacklist.h>
 #include <rfb/Cursor.h>
+#include <rfb/DesktopEndpoint.h>
 #include <rfb/ScreenSet.h>
 
 namespace rfb {
@@ -103,6 +104,7 @@ namespace rfb {
                    const uint8_t* data) override;
     void setCursorPos(const core::Point& p, bool warped) override;
     void setName(const char* name_) override;
+    void setDesktopEndpoint(const DesktopEndpoint& endpoint) override;
     void setLEDState(unsigned state) override;
 
     void bell() override;
@@ -115,6 +117,8 @@ namespace rfb {
     const Cursor* getCursor() const { return cursor; }
     const core::Point& getCursorPos() const { return cursorPos; }
     const char* getName() const { return name.c_str(); }
+    const std::list<DesktopEndpoint>& getDesktopEndpoints() const
+      { return desktopEndpoints; }
     unsigned getLEDState() const { return ledState; }
     bool isDesktopReady() const { return desktopStarted; }
 
@@ -190,6 +194,7 @@ namespace rfb {
     unsigned int ledState;
 
     std::string name;
+    std::list<DesktopEndpoint> desktopEndpoints;
 
     std::list<VNCSConnectionST*> clients;
     VNCSConnectionST* pointerClient;
