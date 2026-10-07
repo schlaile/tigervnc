@@ -64,6 +64,9 @@
 #include "AudioOutput.h"
 #include "AuthDialog.h"
 #include "CConn.h"
+#ifdef HAVE_GNUTLS
+#include "FileDrop.h"
+#endif
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
 #include "PlatformPixelBuffer.h"
@@ -95,7 +98,7 @@ static const unsigned bpsEstimateWindow = 1000;
 CConn::CConn()
   : serverPort(0), sock(nullptr),
     msgTimer(this, &CConn::processNextMsg), desktop(nullptr),
-    audioOutput(nullptr),
+    audioOutput(nullptr), fileDrop(nullptr),
     updateCount(0), pixelCount(0),
     lastServerEncoding((unsigned int)-1), bpsEstimate(20000000)
 {
@@ -116,6 +119,13 @@ CConn::CConn()
   }
 #endif
 
+#ifdef HAVE_GNUTLS
+  if (::fileDrop) {
+    fileDrop = new FileDrop(this);
+    supportsDesktopEndpoint = true;
+  }
+#endif
+
   if (customCompressLevel)
     setCompressLevel(::compressLevel);
 
@@ -130,6 +140,10 @@ CConn::~CConn()
 
   OptionsDialog::removeCallback(handleOptions);
   Fl::remove_timeout(handleUpdateTimeout, this);
+
+#ifdef HAVE_GNUTLS
+  delete fileDrop;
+#endif
 
   if (desktop)
     delete desktop;
@@ -821,6 +835,28 @@ void CConn::setName(const char* name)
 {
   CConnection::setName(name);
   desktop->updateCaption();
+}
+
+// setDesktopEndpoint() is called when the server announces or withdraws
+// a side-channel service of the desktop
+void CConn::setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint)
+{
+#ifdef HAVE_GNUTLS
+  if (fileDrop)
+    fileDrop->setEndpoint(endpoint, serverHost);
+#else
+  (void)endpoint;
+#endif
+}
+
+void CConn::fileDropMessage(const char* text, bool error)
+{
+  if (error)
+    vlog.error("%s", text);
+  else
+    vlog.info("%s", text);
+  if (desktop)
+    desktop->showMessage(text);
 }
 
 // framebufferUpdateStart() is called at the beginning of an update.

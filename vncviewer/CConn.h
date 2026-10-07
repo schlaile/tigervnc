@@ -30,6 +30,7 @@ namespace network { class Socket; }
 
 class AudioOutput;
 class DesktopWindow;
+class FileDrop;
 
 class CConn : public rfb::CConnection
 {
@@ -44,6 +45,10 @@ public:
   unsigned getUpdateCount();
   unsigned getPixelCount();
   unsigned getPosition();
+
+  // Files dropped onto the viewer; nullptr when not supported
+  FileDrop* getFileDrop() { return fileDrop; }
+  void fileDropMessage(const char* text, bool error);
 
 protected:
 
@@ -69,6 +74,7 @@ protected:
                               const rfb::ScreenSet& layout) override;
 
   void setName(const char* name) override;
+  void setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint) override;
 
   void bell() override;
 
@@ -112,6 +118,8 @@ private:
   DesktopWindow *desktop;
 
   AudioOutput *audioOutput;
+
+  FileDrop *fileDrop;
 
   unsigned updateCount;
   unsigned pixelCount;

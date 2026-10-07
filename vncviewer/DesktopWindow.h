@@ -82,6 +82,9 @@ public:
 
   void fullscreen_on();
 
+  // A short message for the user, shown over the desktop
+  void showMessage(const char* text);
+
   // Grab keyboard events from desktop environment
   void grabKeyboard();
   void ungrabKeyboard();

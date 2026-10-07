@@ -190,6 +190,14 @@ Emulate middle mouse button by pressing left and right mouse buttons
 simultaneously. Default is off.
 .
 .TP
+.B \-FileDrop
+Upload files that are dropped onto the viewer window to the remote desktop,
+if the server announces a file drop endpoint for it. The remote desktop decides
+whether it accepts the files at the position where they were dropped. When the
+remote desktop asks to open a document on this computer, the viewer asks first.
+See doc/file-drop.md. Default is on.
+.
+.TP
 .B \-FullColor, \-FullColour
 Tells the VNC server to send full-color pixels in the best format for this
 display.  This is default.
