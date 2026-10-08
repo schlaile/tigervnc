@@ -211,6 +211,14 @@ core::BoolParameter
            _("Upload files dropped onto the viewer to the remote desktop, "
              "if it accepts them"),
            true);
+core::EnumParameter
+  fileDropOpen("FileDropOpen",
+               core::format(
+                 "%s (%s)",
+                 _("What to do when the remote desktop asks to open a "
+                   "document on this computer"),
+                 "Ask, Once, Always, Never").c_str(),
+               {"Ask", "Once", "Always", "Never"}, "Ask");
 #endif
 
 core::BoolParameter
@@ -285,6 +293,7 @@ static core::VoidParameter* parameterArray[] = {
 #endif
 #ifdef HAVE_GNUTLS
   &fileDrop,
+  &fileDropOpen,
 #endif
   /* Compression */
   &autoSelect,

@@ -194,8 +194,17 @@ simultaneously. Default is off.
 Upload files that are dropped onto the viewer window to the remote desktop,
 if the server announces a file drop endpoint for it. The remote desktop decides
 whether it accepts the files at the position where they were dropped. When the
-remote desktop asks to open a document on this computer, the viewer asks first.
-See doc/file-drop.md. Default is on.
+remote desktop asks to open a document on this computer, the viewer asks first
+(see \fB-FileDropOpen\fP). See doc/file-drop.md. Default is on.
+.
+.TP
+.B \-FileDropOpen \fImode\fP
+What to do when the remote desktop asks to open a document on this computer:
+\fBAsk\fP every time, ask \fBOnce\fP per connection and then open further
+documents without asking, open them \fBAlways\fP without asking, or
+\fBNever\fP open them. Only http and https links are opened, with the
+system's default handler. Use \fBAlways\fP only for remote desktops whose
+links you trust. Default is \fBAsk\fP.
 .
 .TP
 .B \-FullColor, \-FullColour
