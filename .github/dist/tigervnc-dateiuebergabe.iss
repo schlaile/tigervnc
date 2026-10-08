@@ -33,7 +33,7 @@ DisableProgramGroupPage=yes
 LicenseFile={#SourceDir}\LICENCE.TXT
 OutputBaseFilename=TigerVNC-Dateiuebergabe-Windows-Setup
 OutputDir=.
-SetupIconFile=..\..\media\icons\tigervnc.ico
+SetupIconFile=wws-vnc.ico
 UninstallDisplayIcon={app}\vncviewer.exe
 Compression=lzma2
 SolidCompression=yes
@@ -48,12 +48,13 @@ Name: "wwsicon"; Description: "Desktop-Verknüpfung „TigerVNC für die WWS“ 
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+Source: "wws-vnc.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\TigerVNC Viewer"; Filename: "{app}\vncviewer.exe"
-Name: "{group}\TigerVNC für die WWS"; Filename: "{app}\vncviewer.exe"; Parameters: "-FileDropOpen=Always"
+Name: "{group}\TigerVNC für die WWS"; Filename: "{app}\vncviewer.exe"; Parameters: "-FileDropOpen=Always"; IconFilename: "{app}\wws-vnc.ico"
 Name: "{group}\TigerVNC entfernen"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\TigerVNC für die WWS"; Filename: "{app}\vncviewer.exe"; Parameters: "-FileDropOpen=Always"; Tasks: wwsicon
+Name: "{userdesktop}\TigerVNC für die WWS"; Filename: "{app}\vncviewer.exe"; Parameters: "-FileDropOpen=Always"; IconFilename: "{app}\wws-vnc.ico"; Tasks: wwsicon
 
 [Run]
 Filename: "{app}\vncviewer.exe"; Parameters: "-FileDropOpen=Always"; Description: "TigerVNC jetzt starten"; Flags: nowait postinstall skipifsilent

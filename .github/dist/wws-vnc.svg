@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Schlaile WWS VNC">
+  <!-- WWS-Stimmgabel (static/img/logo.svg) mit einem Bildschirm für die
+       Fernsitzung -->
+  <defs>
+    <radialGradient id="g" cx="40%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#2cc24a"/>
+      <stop offset="1" stop-color="#14872c"/>
+    </radialGradient>
+  </defs>
+  <g transform="translate(4 4) scale(2.08)">
+    <circle cx="50" cy="50" r="48" fill="url(#g)"/>
+    <path d="M38 8 V50 a12 12 0 0 0 24 0 V8" fill="none" stroke="#0b1640" stroke-width="7"/>
+    <path d="M50 62 V98" stroke="#0b1640" stroke-width="7"/>
+  </g>
+  <!-- Bildschirm -->
+  <g>
+    <rect x="132" y="138" width="118" height="84" rx="10" fill="#0b1640" stroke="#ffffff" stroke-width="6"/>
+    <rect x="146" y="151" width="90" height="58" rx="3" fill="#e8f6ec"/>
+    <path d="M166 222 h50 l8 22 h-66 z" fill="#0b1640" stroke="#ffffff" stroke-width="6" stroke-linejoin="round"/>
+    <!-- Pfeil hinein: Datei übergeben -->
+    <path d="M191 158 v28 m-13 -12 l13 14 l13 -14" fill="none" stroke="#14872c" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
