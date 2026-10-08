@@ -630,6 +630,11 @@ void FileDrop::dropJob(int x, int y, std::vector<std::string> paths,
 
   for (size_t i = 0; i < files.size(); i++) {
     const JValue& r = results.array[i];
+    if (r["result"].string == "known") {
+      message(core::format(_("\"%s\" is there already"),
+                           files[i].name.c_str()), false);
+      continue;
+    }
     if (r["result"].string != "accept") {
       std::string reason = r["reason"].string;
       if (reason.empty())
@@ -663,7 +668,9 @@ bool FileDrop::upload(const File& file, const FileDropURL& url,
 {
   std::map<std::string, std::string> headers;
   headers["Tus-Resumable"] = "1.0.0";
-  headers["Authorization"] = "Bearer " + uploadToken;
+  // an URL on a media server may carry its own authorisation
+  if (!uploadToken.empty())
+    headers["Authorization"] = "Bearer " + uploadToken;
 
   FILE* f = openFile(file.path);
   if (!f) {

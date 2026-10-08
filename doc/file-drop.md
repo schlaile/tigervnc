@@ -194,6 +194,14 @@ The receiver asks the desktop and answers within ten seconds:
 The entries are in the order of the request. `reason` is a short text for
 the user, in the desktop's language.
 
+`{"result": "known"}` means that the receiver has the file already (it knows
+the SHA-256): the client does not upload it and reports it as done. Clients
+that do not know a result treat it like `reject`.
+
+`upload.token` may be empty when the URL carries its own authorisation (an
+unguessable upload URL of a media server); the client then sends no
+`Authorization` header with the upload.
+
 ### Upload: tus
 
 The client uploads each accepted file with the
