@@ -26,6 +26,7 @@
 
 #include <chrono>
 #include <map>
+#include <set>
 #include <stdexcept>
 
 #include <gnutls/gnutls.h>
@@ -42,6 +43,7 @@
 
 #include "CConn.h"
 #include "FileDrop.h"
+#include "parameters.h"
 
 static core::LogWriter vlog("FileDrop");
 
@@ -898,22 +900,54 @@ void FileDrop::handleQueue(void* data)
     std::lock_guard<std::mutex> guard(self->queueLock);
     self->queue.splice(self->queue.begin(), opens);
   }
-  openDocument(open.text, open.name);
+  std::string endpoint;
+  {
+    std::lock_guard<std::mutex> guard(self->lock);
+    endpoint = self->base.str() + " " + self->token;
+  }
+  openDocument(open.text, open.name, endpoint);
 }
 
-void FileDrop::openDocument(const std::string& url, const std::string& name)
+// The server part of an URL, enough to tell where it points (share
+// links are long and say nothing more to a person)
+static std::string shortURL(const std::string& url)
 {
-  std::string what = name.empty() ? url : name;
+  size_t start = url.find("://");
+  size_t end = start == std::string::npos ? std::string::npos
+                                          : url.find('/', start + 3);
+  if (end == std::string::npos || url.size() <= 80)
+    return url;
+  return url.substr(0, end + 1) + "...";
+}
 
-  // Never open without asking: the URL comes from the remote side.
-  // "Open" is not the default button, so that Return (typed into the
-  // session a moment ago) does not open anything.
-  int choice = fl_choice(_("The remote desktop wants to open \"%s\" on "
-                           "this computer.\n\n%s"),
-                         _("Cancel"), nullptr, _("Open"),
-                         what.c_str(), url.c_str());
-  if (choice != 2)
+void FileDrop::openDocument(const std::string& url, const std::string& name,
+                            const std::string& endpoint)
+{
+  // FileDropOpen=Once: endpoints (URL and token) the user said yes to.
+  // Not kept in the object: it may be gone after the dialog below.
+  static std::set<std::string> confirmed;
+
+  std::string what = name.empty() ? shortURL(url) : name;
+
+  // The URL comes from the remote side: by default the user is asked
+  // (FileDropOpen); "Always" is for desktops whose links are trusted.
+  if (fileDropOpen == "Never") {
+    vlog.info(_("Not opening \"%s\" (FileDropOpen=Never)"), what.c_str());
     return;
+  }
+  bool ask = fileDropOpen == "Ask" ||
+             (fileDropOpen == "Once" && !confirmed.count(endpoint));
+  if (ask) {
+    // "Open" is not the default button, so that Return (typed into the
+    // session a moment ago) does not open anything.
+    int choice = fl_choice(_("The remote desktop wants to open \"%s\" on "
+                             "this computer.\n\n%s"),
+                           _("Cancel"), nullptr, _("Open"),
+                           what.c_str(), shortURL(url).c_str());
+    if (choice != 2)
+      return;
+    confirmed.insert(endpoint);
+  }
 
   char msg[256];
   if (!fl_open_uri(url.c_str(), msg, sizeof(msg)))

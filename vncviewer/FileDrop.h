@@ -89,7 +89,8 @@ private:
   // The main thread takes messages and requests from the worker
   // threads with a timer (portable, no FLTK thread support needed)
   static void handleQueue(void* data);
-  static void openDocument(const std::string& url, const std::string& name);
+  static void openDocument(const std::string& url, const std::string& name,
+                           const std::string& endpoint);
 
   CConn* cc;
 
