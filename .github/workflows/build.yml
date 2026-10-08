@@ -412,7 +412,9 @@ jobs:
           brew link fltk@1.3
       - name: Configure
         run: |
+          # libjpeg-turbo is keg-only in Homebrew
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_NLS=ON \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix jpeg-turbo)" \
             -DENABLE_GNUTLS=ON -DENABLE_NETTLE=ON -DENABLE_H264=OFF \
             -DBUILD_VIEWER=ON -S . -B build
       - name: Build
