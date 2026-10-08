@@ -327,22 +327,132 @@ jobs:
           name: Packages (${{ matrix.target }})
           path: .github/containers/${{ matrix.target }}/result
 
-  # Fork only: a tag wws-* publishes the Windows and macOS builds as a
-  # release (downloads for ps.schlaile.de/tigervnc/download/)
+  # Fork only: self-contained builds to hand out (the builds above are
+  # developer builds that rely on the libraries of the build machine).
+  # Windows: a folder with the viewer and its DLLs, zipped.
+  dist-windows:
+    if: startsWith(github.ref, 'refs/tags/wws-') || github.ref == 'refs/heads/file-drop'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+      - name: Install dependencies
+        run: |
+          pacman --sync --noconfirm --needed \
+            make zip mingw-w64-ucrt-x86_64-toolchain \
+            mingw-w64-ucrt-x86_64-cmake \
+            mingw-w64-ucrt-x86_64-fltk1.3 \
+            mingw-w64-ucrt-x86_64-libjpeg-turbo \
+            mingw-w64-ucrt-x86_64-gnutls \
+            mingw-w64-ucrt-x86_64-pixman \
+            mingw-w64-ucrt-x86_64-nettle \
+            mingw-w64-ucrt-x86_64-gmp
+      - name: Configure
+        run: |
+          cmake -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_NLS=ON -DENABLE_GNUTLS=ON -DENABLE_NETTLE=ON \
+            -DBUILD_VIEWER=ON -S . -B build
+      - name: Build
+        run: make -C build vncviewer translations
+      - name: Collect
+        run: |
+          d=dist/TigerVNC-Dateiuebergabe
+          mkdir -p $d
+          cp build/vncviewer/vncviewer.exe LICENCE.TXT README.rst $d/
+          for mo in build/po/*.mo; do
+            lang=$(basename $mo .mo)
+            mkdir -p $d/locale/$lang/LC_MESSAGES
+            cp $mo $d/locale/$lang/LC_MESSAGES/tigervnc.mo
+          done
+          # every DLL from MSYS2, recursively
+          ldd $d/vncviewer.exe | awk '$3 ~ /ucrt64/ {print $3}' | sort -u |
+            xargs -r -I{} cp {} $d/
+          # nothing may be left outside the folder and Windows
+          (cd $d && PATH=/c/Windows/System32:/c/Windows ldd vncviewer.exe) |
+            tee ldd.txt
+          if grep -v -i '/c/Windows' ldd.txt | grep -v '/dist/' | grep -q .; then
+            echo "libraries outside the folder:"; exit 1
+          fi
+          if grep -q "not found" ldd.txt; then exit 1; fi
+          (cd dist && zip -qr TigerVNC-Dateiuebergabe-Windows.zip TigerVNC-Dateiuebergabe)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-windows
+          path: dist/TigerVNC-Dateiuebergabe-Windows.zip
+
+  # macOS: the app with the Homebrew libraries copied into it
+  dist-macos:
+    if: startsWith(github.ref, 'refs/tags/wws-') || github.ref == 'refs/heads/file-drop'
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependencies
+        run: |
+          brew install fltk@1.3 pixman gnutls nettle gmp gettext dylibbundler
+          brew link fltk@1.3
+      - name: Configure
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_NLS=ON \
+            -DENABLE_GNUTLS=ON -DENABLE_NETTLE=ON -DENABLE_H264=OFF \
+            -DBUILD_VIEWER=ON -S . -B build
+      - name: Build
+        run: make -C build vncviewer translations
+      - name: Bundle
+        run: |
+          test -x build/vncviewer/vncviewer
+          app=dist/TigerVNC.app
+          mkdir -p $app/Contents/MacOS $app/Contents/Resources
+          cp build/vncviewer/vncviewer $app/Contents/MacOS/
+          cp media/icons/tigervnc.icns $app/Contents/Resources/
+          cp build/release/Info.plist $app/Contents/
+          for mo in build/po/*.mo; do
+            test -f "$mo" || continue
+            lang=$(basename $mo .mo)
+            mkdir -p $app/Contents/Resources/locale/$lang/LC_MESSAGES
+            cp $mo $app/Contents/Resources/locale/$lang/LC_MESSAGES/tigervnc.mo
+          done
+          dylibbundler -od -b -x $app/Contents/MacOS/vncviewer \
+            -d $app/Contents/Frameworks -p @executable_path/../Frameworks/
+          codesign --force --deep --sign - $app
+          # nothing may point into Homebrew any more
+          if otool -L $app/Contents/MacOS/vncviewer $app/Contents/Frameworks/* |
+              grep -E '/opt/homebrew|/usr/local/(opt|Cellar)'; then
+            exit 1
+          fi
+          cp LICENCE.TXT README.rst dist/
+          hdiutil create -fs HFS+ -volname TigerVNC-Dateiuebergabe \
+            -srcfolder dist TigerVNC-Dateiuebergabe-macOS.dmg
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-macos
+          path: TigerVNC-Dateiuebergabe-macOS.dmg
+
+  # Fork only: a tag wws-* publishes the self-contained Windows and macOS
+  # builds as a release (downloads for ps.schlaile.de/tigervnc/download/)
   release:
     if: startsWith(github.ref, 'refs/tags/wws-')
-    needs: [build-windows, build-macos]
+    needs: [dist-windows, dist-macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: Windows
+          name: dist-windows
           path: dist
       - uses: actions/download-artifact@v8
         with:
-          name: macOS
+          name: dist-macos
           path: dist
       - name: Release
         env:
