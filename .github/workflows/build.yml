@@ -375,7 +375,7 @@ jobs:
           ldd $d/vncviewer.exe | awk '$3 ~ /ucrt64/ {print $3}' | sort -u |
             xargs -r -I{} cp {} $d/
           # nothing may be left outside the folder and Windows
-          (cd $d && PATH=/c/Windows/System32:/c/Windows ldd vncviewer.exe) |
+          (cd $d && PATH=/c/Windows/System32:/c/Windows /usr/bin/ldd vncviewer.exe) |
             tee ldd.txt
           if grep -v -i '/c/Windows' ldd.txt | grep -v '/dist/' | grep -q .; then
             echo "libraries outside the folder:"; exit 1
