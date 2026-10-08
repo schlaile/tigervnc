@@ -423,7 +423,15 @@ jobs:
           app=dist/TigerVNC.app
           mkdir -p $app/Contents/MacOS $app/Contents/Resources
           cp build/vncviewer/vncviewer $app/Contents/MacOS/
-          cp media/icons/tigervnc.icns $app/Contents/Resources/
+          # the WWS icon (.github/dist/wws-vnc.svg), under the name
+          # Info.plist expects
+          set=wws-vnc.iconset
+          mkdir $set
+          for s in 16 32 128 256 512; do
+            sips -z $s $s .github/dist/wws-vnc-1024.png --out $set/icon_${s}x${s}.png
+            sips -z $((s*2)) $((s*2)) .github/dist/wws-vnc-1024.png --out $set/icon_${s}x${s}@2x.png
+          done
+          iconutil -c icns $set -o $app/Contents/Resources/tigervnc.icns
           cp build/release/Info.plist $app/Contents/
           for mo in build/po/*.mo; do
             test -f "$mo" || continue
