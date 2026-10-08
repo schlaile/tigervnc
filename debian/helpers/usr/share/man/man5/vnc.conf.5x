@@ -1,0 +1,282 @@
+'\" t
+.\" ** The above line should force tbl to be a preprocessor **
+.\" Man page for Xvnc
+.\"
+.\" Copyright (C), 2006 - 2016, Joachim.Falk@gmx.de
+.\" Copyright (C), 1998, Marcus.Brinkmann@ruhr-uni-bochum.de
+.\"
+.\" You may distribute under the terms of the GNU General Public
+.\" License as specified in the file COPYING that comes with the
+.\" Debian GNU/Linux distribution.
+.\"
+.TH vnc.conf 5x "Jan 5th, 2017" "TigerVNC 1.7" "Virtual Network Computing"
+.SH NAME
+vnc.conf \- configuration file for Virtual Network Computing
+.SH SYNOPSIS
+.IR $variable\ \| =\ " someValue """;
+
+.IR $variable\ \| =\ " someValue """;
+
+.IR $variable\ \| .=\ " someValue """;
+
+.IR $variable\ \| =\ \| $var1\ \| .\ \| $var2 ;
+
+.SH DESCRIPTION
+.I /etc/vnc.conf
+is the site wide configuration file for
+.BR vncserver (1),
+the free X server for
+.B Virtual Network Computing
+(VNC). It can be used to change the behavior of the server at startup time,
+although for all values suitable defaults are preset.
+
+.I vnc.conf
+will be parsed by vncserver. Then vncserver will proceed and read
+.IR $HOME/.vnc/vnc.conf ,
+a file that can be changed on a per-user base. It has the some syntax and
+options as the file described in this document.
+
+.SH EXAMPLES
+The site wide configuration file\fI /etc/vnc.conf\fP should come with the Debian package tigervnc-standalone-server.
+This file serves as an example for the user file\fI $HOME/.vnc/vnc.conf\fP.
+The site wide configuration file is pretty self-descriptive, and this document will mainly repeat the information that already can be found there.
+
+.SH OVERVIEW
+The file is in
+.BR perl (1)
+syntax, although only variable assignment is allowed for your safety and
+convenience. But there still a variety of possibilities to set the string
+variables.
+
+All variable names are prefixed by `$'. You can assign a string to a
+variable using the `=' operator, and you can append a string to a variable
+using the `.=' operator. You can concatenate two strings using the `.'
+operator. You can substitute variables even inside quotes. You can access
+the environment variables using the notation
+.IR $ENV{VARIABLE} .
+
+You can unset a variable by assigning\fB undef\fP to it. Use this to
+return the state of the variable from `set' to `use default'.
+
+You must end a line with a semicolon.
+
+.SH OPTIONS
+The options are given with their default value if this is known.
+
+.TP
+.IR $vncClasses\ \| =\ " /var/www/vnc """;
+Should be the path to the java classes of the server.
+.TP
+.IR $baseHttpPort\ \| =\  undef ";
+This is the port base for the mini-HTTP server that is built-in to
+.BR Xtigervnc (1) .
+The real http port will be derived from this base plus the display number.
+.TP
+.IR $XFConfigPath\ \| =\ " /etc/X11/xorg.conf """;
+Can be set to the global
+.I xorg.conf
+file. This will be
+parsed to gain default values for
+.IR $fontPath .
+.\"and
+.\".IR $colorPath .
+If you want to disable this feature, point it to an
+invalid file,
+.I /invalid
+for example.
+.TP
+.IR $fontPath
+Should be a comma separated list of fonts to be added to the font
+path. If not specified, and
+.I $XFConfigPath
+is valid, vncserver will read the $fontPath from there. If both are
+not set, the default will apply.
+.\".TP
+.\".IR $colorPath
+.\"should be the RGB file to be used by X. This can also be taken from the
+.\".I XF86Config
+.\"file if specified by
+.\".IR $XFConfigPath .
+.TP
+.IR $PAMService\ \| =\ " tigervnc """;
+This parameter specifies the PAM service used for plain password authentication if one of the security types \fB Plain\fP,\fB TLSPlain\fP, or\fB X509Plain\fP is used.
+If
+.I /etc/pam.d/vnc
+is not present, then
+.BR tigervncserver (1)
+expects to use the\fB tigervnc\fP PAM service to authenticate the passwords of users when any of the\fB *Plain\fP security types are used.
+Note that the tigervnc-common package provides the PAM service configuration file
+.IR /etc/pam.d/tigervnc .
+Otherwise, if
+.I /etc/pam.d/vnc
+is present, then the\fB vnc\fP PAM service will be used.
+.PP
+.IR $sslAutoGenCertCommand\ \| =\ " openssl\ req
+.RS 15
+.I \-newkey\ ec:/etc/tigervnc/ecparams.pem
+.RE
+.RS 15
+.IR \-x509\ \-days\ 2190\ \-nodes """;
+.RE
+.RS
+The command specified by the\fI $sslAutoGenCertCommand\fP parameter is used to auto generate the certificate for the\fI \-X509Cert\fP and\fI \-X509Key\fP options of
+.BR Xtigervnc (1) .
+The configuration for
+.BR openssl (1SSL)
+is taken from
+.I /etc/tigervnc/ssleay.cnf
+where we substitute\fB @HostName@\fP by the fully qualified domain name of the host.
+.RE
+.TP
+.IR $vncUserDir\ \| =\ " $ENV{HOME}/.vnc """;
+Contains the filename for the log files directory of Xvnc
+(the server) and the viewers that are connected to it.
+.TP
+.IR $vncPasswdFile\ \| =\ \| $vncUserDir\ \| .\ " /passwd """;
+Contains the filename of the password file for Xtigervnc. This file is only used for the security types\fB VncAuth\fP,\fB TLSVnc\fP, and\fB X509Vnc\fP.
+.TP
+.IR $vncStartup\ \| =\ " /etc/X11/XSession """;
+Points to a script that will be started at the very beginning of the Xvnc
+session.
+.TP
+.IR $xauthorityFile\ \| =\ " $ENV{HOME}/.Xauthority """;
+Specifies the path to the X authority file that should be used
+by your Xvnc server.
+.TP
+.IR $desktopName\ \| =\ " ${HOSTFQDN}:nn\ ($ENV{LOGNAME}) """;
+Should be set to the default name of the desktop.
+This can be changed at the command line with
+.IR -name .
+.TP
+.IR $wmDecoration\ \| =\ " 8x64 """;
+Sets the adjustment of\fI $geometry\fP to accommodate the window decoration
+used by the X11 window manager. This is used to fully display the VNC desktop
+even if the VNC viewer is not in full screen mode.
+.TP
+.IR $geometry\ \| =\ " 1900x1200 """;
+This sets the framebuffer width & height. A default for this option as well as the
+.IR $depth
+and
+.IR $pixelformat
+options can be derived if the
+.BR tigervncserver (1)
+is run in a X session \(en either $ENV{DISPLAY} or the session given by\fI $getDefaultFrom\fP
+\(en with the \fI\-xdisplaydefaults\fP option. The geometry can also be changed
+at the commandline with the \fI\-geometry\fP option. Otherwise, the fixed defaults
+given here as well as in the following two configuration parameter documentations will be used.
+.TP
+.IR $depth\ \| =\ " 32 """;
+This sets the framebuffer color depth, i.e., the number of bits per pixel to use.
+It must be either 32, 24, 16, or 8.
+.TP
+.IR $pixelformat\ \| =\ " rgb888 """;
+Specifies the pixel format for the
+.BR Xtigervnc (1)
+server to use (BGRnnn or RGBnnn). The default for depth 8 is BGR233 (meaning the
+most significant two bits represent blue, the next three green, and the least
+significant three represent red), the default for depth 16 is RGB565 and for
+depth 24 and 32 is RGB888.
+.TP
+.I $getDefaultFrom
+This option lets you set the display from which you can query the default of
+the above three options, if you don't want to start vncserver
+from within a running X server. It will be added to the call of xdpyinfo.
+It is useful to get the default from the X server you will run xvncviewer
+in, because the data has not to be recalculated then.
+
+.IR $getDefaultFrom\ \| =\ " \-display\ localhost:0 """;
+is an example how to do this.
+.
+.TP
+.IR $rfbwait\ \| =\ " 30000 """;
+Sets the maximum time in msec to wait for the VNC client viewer.
+.
+.TP
+.IR $localhost\ \| =\ " yes """;
+Should the TigerVNC server only listen on localhost for incoming TigerVNC
+connections. This is useful if you use SSH and want to stop non-SSH
+connections from any other hosts. Hence,
+.IR $localhost\ \| =\ " yes """
+is the default if security types are not specified.
+In this case, only the security type \fBVncAuth\fP will be offered.
+If the security types are specified, either via the option \fI\-SecurityTypes\fP given to
+.BR tigervncserver (1)
+or via the \fI$SecurityTypes\fP configuration parameter in
+.IR /etc/vnc.conf
+or in
+.IR $HOME/.vnc/vnc.conf ,
+then the default depends on the specified security types.
+The default will be
+.IR $localhost\ \| =\ " no """
+if the specified security types contain at least one of the \fB TLS*\fP or\fB X509*\fP secutity types and also contain none of the \fP *None\fP security types.
+As always, the defaults can be overwritten on the commandline via the \fI\-localhost\fP option or via the \fI$localhost\fP configuration parameter in
+.I /etc/vnc.conf
+or in
+.IR $HOME/.vnc/vnc.conf .
+.TP
+.IR $SecurityTypes\ \| =\ " \fBVncAuth\fP """
+The \fI$SecurityTypes\fP parameter contains a comma separated list of the default security types the Xtigervnc server will offer.
+Available security types are \fBNone\fP, \fBVncAuth\fP, \fBPlain\fP, \fBTLSNone\fP, \fBTLSVnc\fP, \fBTLSPlain\fP, \fBX509None\fP, \fBX509Vnc\fP and \fBX509Plain\fP.
+The \fP *None\fP security types do not offer any kind of user authentication for connecting VNC sessions.
+Hence, combining a \fB *None\fP security type and
+.IR $localhost\ \| =\ " no """
+is a very bad idea.
+The \fB TLS*\fP and\fB X509*\fP security types do enforce SSL encryption for data transmission.
+Hence, combining a \fB TLS*\fP or \fB X509*\fP security type and
+.IR $localhost\ \| =\ " yes """
+is a senseless idea.
+Thus, in the case of
+.IR $localhost\ \| =\ " no """, the default for\fI $SecurityTypes\fP will be extended from  \fBVncAuth\fP to \fBVncAuth\fP,\fBTLSVnc\fP.
+.TP
+.IR $PlainUsers\ \| =\ " $ENV{LOGNAME} """
+The \fI$PlainUsers\fP configuration parameter contains a comma separated list of users
+that are authorized to access the VNC server if the security types\fB Plain\fP,\fB TLSPlain\fP,
+or\fB X509Plain\fP are used to establish the connection. The password for these users are
+check by the system via the PAM service specified via \fI$PAMService\fP option. On default,
+only the user starting the tigervncserver is contained in the list. By specifying \fB*\fP, any user can authenticate using this security type.
+.TP
+\fI$X509Cert\fP and \fI$X509Key\fP
+.RS
+These two options contain the filenames for a certificate and its
+key that is used for the security types\fB X509None\fP,\fB X509Vnc\fP, and\fB X509Plain\fP.
+If nothing is specified \(en the default case \(en then a self-signed certificate is
+auto-generated by
+.BR tigervncserver (1)
+and stored in
+.I $HOME/.vnc/${HOSTFQDN}-SrvCert.pem
+and
+.IR $HOME/.vnc/${HOSTFQDN}-SrvKey.pem ,
+respectively.
+.
+If filenames are given for \fI$X509Cert\fP and \fI$X509Key\fP either here or
+on the commandline via \fI\-X509Cert\fP and \fI\-X509Key\fP options, then
+the auto generation is disabled and the user has to take care
+that usable certificates are present.
+.RE
+.SH FILES
+.TP
+.B /usr/bin/vncserver
+A wrapper script around
+.B Xvnc
+to start the server with appropriate defaults.
+.TP
+.TP
+.B /usr/bin/vncpasswd
+Command to create and change password files to be used by the RFB protocol
+(can be specified in the
+.I $vncPasswdFile
+variable).
+.B /usr/bin/Xvnc
+The real server. Will be invoked by vncserver.
+.SH "SEE ALSO"
+.BR Xvnc (1),
+.BR vncserver (1),
+.BR x0vncserver (1),
+.BR vncpasswd (1),
+.BR vncviewer (1).
+.
+.SH AUTHOR
+2016 \- Modified for TigerVNC 1.7 by Joachim Falk (Joachim.falk@gmx.de)
+2006 \- Modified for vnc 4.1.2 by Joachim Falk (Joachim.falk@gmx.de)
+1998 \- Originally written by Marcus Brinkmann (Marcus.Brinkmann@ruhr-uni-bochum.de)
+for the Debian GNU/Linux Distribution.

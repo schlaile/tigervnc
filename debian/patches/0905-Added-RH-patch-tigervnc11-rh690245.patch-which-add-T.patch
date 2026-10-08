@@ -1,0 +1,40 @@
+From 4207d0d5cf2330a39830dbc5971f1c199e86e0a2 Mon Sep 17 00:00:00 2001
+From: Joachim Falk <joachim.falk@gmx.de>
+Date: Thu, 13 Oct 2011 19:57:53 +0200
+Subject: [PATCH 5/7] Added RH patch tigervnc11-rh690245.patch which add TLS encryption to VeNCrypt
+
+TigerVNC (Xvnc, x0vncserver, the libvnc.so module, and vncviewer) now
+supports TLS encryption (using VeNCrypt) which allows TLS encrypted
+communication between a server and a viewer. (BZ#653491)
+---
+ common/rfb/Security.cxx       |    3 ---
+ common/rfb/SecurityClient.cxx |    2 +-
+ common/rfb/SecurityServer.cxx |    2 +-
+ 3 files changed, 2 insertions(+), 5 deletions(-)
+
+Index: pkg-tigervnc/common/rfb/SecurityClient.cxx
+===================================================================
+--- pkg-tigervnc.orig/common/rfb/SecurityClient.cxx
++++ pkg-tigervnc/common/rfb/SecurityClient.cxx
+@@ -49,7 +49,7 @@ StringParameter SecurityClient::secTypes
+ #endif
+  ")",
+ #ifdef HAVE_GNUTLS
+- "X509Plain,TLSPlain,X509Vnc,TLSVnc,X509None,TLSNone,VncAuth,None",
++ "VeNCrypt,X509Plain,TLSPlain,X509Vnc,TLSVnc,X509None,TLSNone,VncAuth,None",
+ #else
+  "VncAuth,None",
+ #endif
+Index: pkg-tigervnc/common/rfb/SecurityServer.cxx
+===================================================================
+--- pkg-tigervnc.orig/common/rfb/SecurityServer.cxx
++++ pkg-tigervnc/common/rfb/SecurityServer.cxx
+@@ -43,7 +43,7 @@ StringParameter SecurityServer::secTypes
+ #endif
+  ")",
+ #ifdef HAVE_GNUTLS
+- "TLSVnc,VncAuth",
++ "VncAuth",
+ #else
+  "VncAuth",
+ #endif

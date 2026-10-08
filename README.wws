@@ -1,0 +1,7 @@
+Branch wws-stretch-xvnc of the TigerVNC fork: Debian stretch's tigervnc
+1.7.0+dfsg-7+deb9u1 (pristine orig + debian/ from archive.debian.org) with
+one additional patch, debian/patches/wws-file-drop-endpoint.patch: the
+server side of VNC File Drop for the Xtigervnc of the Schlaile WWS tills
+(stretch-i386, X server 1.19, which TigerVNC master no longer supports).
+
+Built on Bob: bob-build submit --target stretch-i386 (in this worktree).

@@ -1,0 +1,282 @@
+#!/usr/bin/make -f
+# debian/rules for the Debian tigervnc package.
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+# Where the tigervnc sources are
+DEB_SRCDIR   = .
+# Don't override DEB_BUILDDIR as /usr/share/cdbs/1/class/cmake.mk does not
+# support this
+## Where to built tigervnc
+#DEB_BUILDDIR = $(CURDIR)/obj-$(DEB_BUILD_GNU_TYPE)
+
+# Normal situation
+#VNC_PATCH = $(CURDIR)/unix/xserver117.patch
+# However in this case we do not have this file from upstream so we use a
+# debian specific copy instead.
+VNC_PATCH = $(CURDIR)/debian/xserver119.patch
+VNC_LIBTOOL_PATCH = $(CURDIR)/contrib/packages/deb/ubuntu-xenial/debian/xorg-source-patches/debian_libtool.patch
+
+include /usr/share/cdbs/1/rules/debhelper.mk
+include /usr/share/cdbs/1/class/cmake.mk
+
+# Do our complex patch dance first! After that quilt patch system can proceed!
+clean:: unpatch
+unpatch: reverse-patches-dance
+patch: apply-patches-dance
+
+include /usr/share/cdbs/1/rules/patchsys-quilt.mk
+
+DEB_DH_AUTORECONF_ARGS       = $(CURDIR)/debian/xorg-autoreconf.sh
+DEB_DH_AUTORECONF_CLEAN_ARGS =
+
+#include /usr/share/cdbs/1/rules/autoreconf.mk we need the deautoreconf in the unpatch sequence
+
+# --disable-maintainer-mode does not seem to do its job! Why?!
+DEB_CONFIGURE_EXTRA_FLAGS += --disable-maintainer-mode
+
+DEB_CMAKE_INSTALL_PREFIX  = /usr
+DEB_CMAKE_EXTRA_FLAGS     += -DUSE_INCLUDED_ZLIB:BOOL=OFF
+DEB_CMAKE_EXTRA_FLAGS     += -DENABLE_LIBWRAP:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS     += -DENABLE_NLS:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS     += -DENABLE_GNUTLS:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS     += -DENABLE_PAM:BOOL=ON
+#DEB_CMAKE_EXTRA_FLAGS     += -DBUILD_JAVA=1
+
+CFLAGS   += $(shell dpkg-buildflags --get CFLAGS)
+CXXFLAGS += $(shell dpkg-buildflags --get CXXFLAGS)
+CPPFLAGS += $(shell dpkg-buildflags --get CPPFLAGS)
+LDFLAGS  += $(shell dpkg-buildflags --get LDFLAGS)
+
+# We need that as /usr/share/cdbs/1/class/cmake.mk is buggy and does not use the :STRING qualifier
+DEB_CMAKE_EXTRA_FLAGS += -DCMAKE_C_FLAGS:STRING="$(CPPFLAGS) $(CFLAGS) -fPIC"
+DEB_CMAKE_EXTRA_FLAGS += -DCMAKE_CXX_FLAGS:STRING="$(CPPFLAGS) $(CXXFLAGS) -fPIC"
+DEB_CMAKE_EXTRA_FLAGS += -DCMAKE_EXE_LINKER_FLAGS="$(LDFLAGS)"
+DEB_CMAKE_EXTRA_FLAGS += -DCMAKE_SHARED_LINKER_FLAGS="$(LDFLAGS)"
+
+# This is stolen from xorg-server/debian/xsfbs/xsfbs.mk
+# Determine (source) package name from Debian changelog.
+SOURCE_NAME:=$(shell dpkg-parsechangelog -ldebian/changelog \
+                        | grep '^Source:' | awk '{print $$2}')
+
+# Determine package version from Debian changelog.
+SOURCE_VERSION:=$(shell dpkg-parsechangelog -ldebian/changelog \
+                        | grep '^Version:' | awk '{print $$2}')
+
+# Strip a possible epoch marker from source version.
+NO_EPOCH_VER:=$(shell echo $(SOURCE_VERSION) | sed 's/^.://')
+
+# Determine upstream version number for make get-orig-source
+UPSTREAM_DFSG_VERSION:=$(shell echo $(NO_EPOCH_VER) | sed 's/-.*//')
+
+# Determine upstream version number.
+UPSTREAM_VERSION:=$(shell echo $(UPSTREAM_DFSG_VERSION) | cut -d"+" -f1)
+
+# Highly modified and adapted from http://wiki.debian.org/SandroTosi/Svn_get-orig-source
+TIGERVNC_PACKAGE = tigervnc
+TIGERVNC_VERSION = $(UPSTREAM_VERSION)
+TIGERVNC_TARBALL = $(TIGERVNC_PACKAGE)_$(UPSTREAM_DFSG_VERSION).orig.tar.xz
+
+debug-debian-rules:
+	@echo '$$(DEB_CONFIGURE_EXTRA_FLAGS) $(DEB_CONFIGURE_EXTRA_FLAGS)'
+	@echo '$$(DEB_CMAKE_EXTRA_FLAGS) $(DEB_CMAKE_EXTRA_FLAGS)'
+	@echo '$$(SOURCE_NAME) $(SOURCE_NAME)'
+	@echo '$$(SOURCE_VERSION) $(SOURCE_VERSION)'
+	@echo '$$(NO_EPOCH_VER) $(NO_EPOCH_VER)'
+	@echo '$$(UPSTREAM_DFSG_VERSION) $(UPSTREAM_DFSG_VERSION)'
+	@echo '$$(UPSTREAM_VERSION) $(UPSTREAM_VERSION)'
+	@echo '$$(TIGERVNC_PACKAGE) $(TIGERVNC_PACKAGE)'
+	@echo '$$(TIGERVNC_VERSION) $(TIGERVNC_VERSION)'
+	@echo '$$(TIGERVNC_TARBALL) $(TIGERVNC_TARBALL)'
+
+.PHONY: apply-patches-dance reverse-patches-dance
+
+apply-patches-dance: apply-patches
+apply-patches: apply-patches-vnc-patch-xorg
+apply-patches-vnc-patch-xorg: apply-patches-unify-xorg-and-vnc-tree
+apply-patches-unify-xorg-and-vnc-tree:
+
+reverse-patches-dance: reverse-patches-remove-xorg-from-vnc-tree
+reverse-patches-remove-xorg-from-vnc-tree: reverse-patches-vnc-unpatch-xorg reverse-patches-vnc-unpatch-xorg-libtool
+reverse-patches-vnc-unpatch-xorg: reverse-patches-deautoreconf
+reverse-patches-deautoreconf: reverse-patches
+
+.PHONY: reverse-patches-deautoreconf
+
+post-patches:: $(DEB_SRCDIR)/unix/xserver/.autoreconf-xorg.stamp
+
+$(DEB_SRCDIR)/unix/xserver/.autoreconf-xorg.stamp:
+	dh_autoreconf $(DEB_DH_AUTORECONF_ARGS) && touch $@
+
+reverse-patches-deautoreconf:
+	if test -f $(DEB_SRCDIR)/unix/xserver/.autoreconf-xorg.stamp; then \
+	  dh_autoreconf_clean $(DEB_DH_AUTORECONF_CLEAN_ARGS) && \
+	  rm -f $(DEB_SRCDIR)/unix/xserver/.autoreconf-xorg.stamp \
+	  	$(CURDIR)/debian/autoreconf.before \
+	  	$(CURDIR)/debian/autoreconf.after; \
+	else \
+	  rm -f $(CURDIR)/debian/autoreconf.before \
+	  	$(CURDIR)/debian/autoreconf.after; \
+	fi
+
+.PHONY: apply-patches-vnc-patch-xorg reverse-patches-vnc-unpatch-xorg
+
+apply-patches-vnc-patch-xorg: $(DEB_SRCDIR)/unix/xserver/.apply-patches-vnc-patch-xorg.stamp
+
+$(DEB_SRCDIR)/unix/xserver/.apply-patches-vnc-patch-xorg.stamp: $(VNC_PATCH)
+	cd $(DEB_SRCDIR)/unix/xserver && { \
+		patch --no-backup-if-mismatch -p1 < $(VNC_PATCH) && \
+		touch .apply-patches-vnc-patch-xorg.stamp; \
+	}
+
+reverse-patches-vnc-unpatch-xorg: $(VNC_PATCH)
+	cd $(DEB_SRCDIR)/unix/xserver && if test -f .apply-patches-vnc-patch-xorg.stamp; then \
+		patch --no-backup-if-mismatch -R -p1 < $(VNC_PATCH); \
+		rm -f .apply-patches-vnc-patch-xorg.stamp; \
+	fi
+
+.PHONY: apply-patches-vnc-patch-xorg-libtool reverse-patches-vnc-unpatch-xorg-libtool
+
+apply-patches-vnc-patch-xorg-libtool: $(DEB_SRCDIR)/unix/xserver/.apply-patches-vnc-patch-xorg-libtool.stamp
+
+$(DEB_SRCDIR)/unix/xserver/.apply-patches-vnc-patch-xorg-libtool.stamp: $(VNC_LIBTOOL_PATCH)
+	cd $(DEB_SRCDIR)/unix/xserver && { \
+		patch --no-backup-if-mismatch -p1 < $(VNC_LIBTOOL_PATCH) && \
+		touch .apply-patches-vnc-patch-xorg-libtool.stamp; \
+	}
+
+reverse-patches-vnc-unpatch-xorg-libtool: $(VNC_LIBTOOL_PATCH)
+	cd $(DEB_SRCDIR)/unix/xserver && if test -f .apply-patches-vnc-patch-xorg-libtool.stamp; then \
+		patch --no-backup-if-mismatch -R -p1 < $(VNC_LIBTOOL_PATCH); \
+		rm -f .apply-patches-vnc-patch-xorg-libtool.stamp; \
+	fi
+
+.PHONY: apply-patches-unify-xorg-and-vnc-tree reverse-patches-remove-xorg-from-vnc-tree
+
+apply-patches-unify-xorg-and-vnc-tree: $(DEB_SRCDIR)/unix/xserver/.apply-patches-unify-xorg-and-vnc-tree.stamp
+
+$(DEB_SRCDIR)/unix/xserver/.apply-patches-unify-xorg-and-vnc-tree.stamp:
+	cd $(DEB_SRCDIR)/unix/xserver && \
+	  { tar --strip-components 1 -xvJf /usr/src/xorg-server.tar.xz | \
+	      sed -e 's@^[^/]*/@@' > .apply-patches-unify-xorg-and-vnc-tree.files; } && \
+	  touch .apply-patches-unify-xorg-and-vnc-tree.stamp
+
+reverse-patches-remove-xorg-from-vnc-tree:
+	cd $(DEB_SRCDIR)/unix/xserver && \
+		if test -f .apply-patches-unify-xorg-and-vnc-tree.files; then \
+			sort -r < .apply-patches-unify-xorg-and-vnc-tree.files | \
+				while read line; do \
+					if test -d "$$line"; then \
+						rmdir "$$line" || true; \
+					else \
+						rm -f "$$line"; \
+					fi; \
+				done; \
+			rm -f .apply-patches-unify-xorg-and-vnc-tree.stamp \
+			      .apply-patches-unify-xorg-and-vnc-tree.files; \
+		fi
+
+configure/tigervnc-standalone-server configure/tigervnc-xorg-extension:: $(DEB_BUILDDIR)/unix/xserver/configure.stamp
+
+-include /usr/share/xserver-xorg/configure_flags.mk
+
+xserver_confflags := $(shell echo '$(xserver_confflags)' | sed 's/--with-builderstring="[^"]*"//')
+XORG_DEBIAN_CONFIGURE_FLAGS = \
+	$(filter-out \
+		--prefix=% \
+		--mandir=% \
+		--infodir=% \
+		--sysconfdir=% \
+		--localstatedir=% \
+		--build=% \
+		--host=% \
+		--enable-xwayland \
+		--enable-xfbdev \
+		--enable-dmx \
+		--enable-xvfb \
+		--enable-xnest \
+		--enable-xephyr \
+		--enable-xorg \
+		--enable-dri \
+		--enable-dri2 \
+		--enable-xmir \
+	    , $(xserver_confflags) \
+	)
+
+# Next step is run configure script. It is very difficult use correct parameters.
+# You should use same parameters as used in your distribution X server and add
+# --disable-xvfb --disable-xnest --disable-xorg
+$(DEB_BUILDDIR)/unix/xserver/configure.stamp: apply-patches-vnc-patch-xorg-libtool
+	mkdir -p $(DEB_BUILDDIR)/unix/xserver
+	cd $(DEB_BUILDDIR)/unix/xserver && \
+	  $(DEB_CONFIGURE_SCRIPT_ENV) $(CURDIR)/$(DEB_SRCDIR)/unix/xserver/configure \
+		CPPFLAGS="$(CPPFLAGS)" \
+		CFLAGS="$(CFLAGS)" \
+		CXXFLAGS="$(CXXFLAGS)" \
+		LDFLAGS="$(LDFLAGS) -lpam" \
+		--prefix=/usr \
+		--mandir=\$${prefix}/share/man \
+		--infodir=\$${prefix}/share/info \
+		--sysconfdir=/etc \
+		--localstatedir=/var \
+		$(XORG_DEBIAN_CONFIGURE_FLAGS) \
+		$(DEB_CONFIGURE_EXTRA_FLAGS) \
+		--disable-selective-werror \
+		--with-builderstring="tigervnc-xorg-server $(NO_EPOCH_VER) (TigerVNC Packaging Team <pkg-tigervnc-devel@lists.alioth.debian.org>)" \
+		--disable-xwayland \
+		--disable-xfbdev \
+		--disable-dmx \
+		--disable-xvfb \
+		--disable-xnest \
+		--disable-xephyr \
+		--disable-xorg \
+		--disable-dri \
+		--disable-dri2
+	touch $@
+
+build/tigervnc-standalone-server build/tigervnc-xorg-extension::
+	$(MAKE) -C $(DEB_BUILDDIR)/unix/xserver
+
+install/tigervnc-common::
+	mkdir -p $(DEB_DESTDIR)/usr/share/doc
+	mv $(DEB_DESTDIR)/usr/share/doc/tigervnc-* \
+	  $(DEB_DESTDIR)/usr/share/doc/tigervnc-common
+
+install/tigervnc-viewer::
+	mv $(DEB_DESTDIR)/usr/bin/vncviewer \
+	  $(DEB_DESTDIR)/usr/bin/xvncviewer
+	mv $(DEB_DESTDIR)/usr/share/man/man1/vncviewer.1 \
+	  $(DEB_DESTDIR)/usr/share/man/man1/xvncviewer.1
+
+install/tigervnc-standalone-server install/tigervnc-xorg-extension::
+	$(MAKE) -C $(DEB_BUILDDIR)/unix/xserver/hw/vnc DESTDIR=$(DEB_DESTDIR) install
+
+common-binary-arch:: debian/tmp/common-binary-impl.stamp
+
+common-binary-indep::
+
+debian/tmp/common-binary-impl.stamp:
+	cd $(DEB_DESTDIR) && find usr/bin usr/share/man -name "*vnc*" | while read line; do \
+	  mv "$$line" `echo "$$line" | sed -e 's/vnc/tigervnc/g'`; \
+	done
+	cp -pr debian/helpers/* \
+	  debian/tmp
+	find debian/tmp/usr/share/man -type f | while read line; do \
+	  sed -e 's/\<vncviewer\>/xtigervncviewer/g' \
+	      -e 's/\<vncpasswd\>/tigervncpasswd/g' \
+	      -e 's/\<vncconfig\>/tigervncconfig/g' \
+	      -e 's/\<vncserver\>/tigervncserver/g' \
+	      -e 's/\<x0vncserver\>/x0tigervncserver/g' \
+	      -e 's/\<Xvnc\>/Xtigervnc/g' \
+	      -e 's/\<Xtigervnc-session\>/Xvnc-session/g' \
+	      $$line | \
+	    gzip -9 > $$line.gz; \
+	  rm -f $$line; \
+	done
+	touch $@
+
+clean::
+	rm -rf $(DEB_BUILDDIR)
+	rm -f debian/*.debhelper.log
+

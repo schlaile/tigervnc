@@ -1,0 +1,45 @@
+Author: Joachim Falk <joachim.falk@gmx.de>
+Date: Mon, 06 Feb 2017 23:34:35 +0100
+Subject: [PATCH] Fix server side cursor support for Xorg server >= 1.19
+
+This is a minimal backport of the fix applied by Pierre Ossman on 2016-10-05 in
+the commit b192107b302098864358cd54b6323129c23e271e on TigerVNC master while
+unifying some code paths for Xorg server < 1.19 and >= 1.19.
+
+The function XserverDesktop::readWakeupHandler is used by the code path for
+Xorg server < 1.19. Here, the mouse movement is propagated from the VNC client
+to the server via the following code snippet:
+
+  // We are responsible for propagating mouse movement between clients
+  int cursorX, cursorY;
+  vncGetPointerPos(&cursorX, &cursorY);
+  if (oldCursorPos.x != cursorX || oldCursorPos.y != cursorY) {
+    oldCursorPos.x = cursorX;
+    oldCursorPos.y = cursorY;
+    server->setCursorPos(oldCursorPos);
+  }
+
+The corresponding function XserverDesktop::blockHandler, which is used by
+the Xorg server >= 1.19 code path, was missing this. Hence, this patches adds
+the missing cursor propagation code.
+
+Index: pkg-tigervnc/unix/xserver/hw/vnc/XserverDesktop.cc
+===================================================================
+--- pkg-tigervnc.orig/unix/xserver/hw/vnc/XserverDesktop.cc
++++ pkg-tigervnc/unix/xserver/hw/vnc/XserverDesktop.cc
+@@ -556,6 +556,15 @@ void XserverDesktop::blockHandler(int* timeout)
+       }
+     }
+ 
++    // We are responsible for propagating mouse movement between clients
++    int cursorX, cursorY;
++    vncGetPointerPos(&cursorX, &cursorY);
++    if (oldCursorPos.x != cursorX || oldCursorPos.y != cursorY) {
++      oldCursorPos.x = cursorX;
++      oldCursorPos.y = cursorY;
++      server->setCursorPos(oldCursorPos);
++    }
++
+     int nextTimeout = server->checkTimeouts();
+     if (nextTimeout > 0 && (*timeout == -1 || nextTimeout < *timeout))
+       *timeout = nextTimeout;

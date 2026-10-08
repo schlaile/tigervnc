@@ -1,0 +1,12 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -214,7 +214,8 @@
+ set(FLTK_SKIP_FLUID TRUE)
+ set(FLTK_SKIP_OPENGL TRUE)
+ set(FLTK_SKIP_FORMS TRUE)
+-find_package(FLTK)
++#find_package(FLTK)
++set (FLTK_LIBRARIES "fltk_images;fltk")
+ 
+ if(UNIX AND NOT APPLE)
+   # No proper handling for extra X11 libs that FLTK might need...

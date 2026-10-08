@@ -1,0 +1,254 @@
+Source: tigervnc
+Section: x11
+Priority: optional
+Maintainer: TigerVNC Packaging Team <pkg-tigervnc-devel@lists.alioth.debian.org>
+Uploaders:
+ Joachim Falk <joachim.falk@gmx.de>,
+ Mike Gabriel <mike.gabriel@das-netzwerkteam.de>,
+ Yaroslav Halchenko <debian@onerussian.com>,
+ Ola Lundqvist <opal@debian.org>,
+ Liang Guo <guoliang@debian.org>,
+# all the Build-Depends up to x11proto-xf86-dri-dev are for the normal Xorg
+# server, and common dependencies for the DIX.
+# x11proto-xf86dri-dev and libdrm-dev are for DRI support for the Xorg server.
+# x11proto-print-dev and libfreetype6-dev are for Xprint
+# everything on is for the DMX and Xnest servers.
+Build-Depends:
+ cdbs (>= 0.4.89),
+ dh-autoreconf,
+ cmake (>= 2.8),
+ pristine-tar,
+ gettext,
+ zlib1g-dev,
+ libjpeg-dev,
+ libgnutls28-dev,
+ libpam0g-dev,
+ libxft-dev,
+ libxcursor-dev,
+ libwrap0-dev,
+ libfltk1.3-dev (>= 1.3.3),
+ xorg-server-source (>= 2:1.19),
+ xserver-xorg-dev,
+# this are dependencies from xorg deb
+ debhelper (>= 9),
+ dh-autoreconf,
+ po-debconf,
+ dpkg-dev (>= 1.16.1),
+ quilt,
+ lsb-release,
+ pkg-config,
+ bison,
+ flex,
+ xutils-dev (>= 1:7.6+4),
+ xfonts-utils (>= 1:7.5+1),
+ x11proto-bigreqs-dev (>= 1:1.1.0),
+ x11proto-composite-dev (>= 1:0.4),
+ x11proto-core-dev (>= 7.0.31),
+ x11proto-damage-dev (>= 1.1),
+ x11proto-fixes-dev (>= 1:5.0),
+ x11proto-fonts-dev (>= 2.1.3),
+ x11proto-kb-dev (>= 1.0.3),
+ x11proto-xinerama-dev,
+ x11proto-randr-dev (>= 1.5.0),
+ x11proto-record-dev (>= 1.13.99.1),
+ x11proto-render-dev (>= 2:0.11),
+ x11proto-resource-dev (>= 1.2.0),
+ x11proto-scrnsaver-dev,
+ x11proto-video-dev,
+ x11proto-xcmisc-dev (>= 1.2.0),
+ x11proto-xext-dev (>= 7.2.99.901),
+ x11proto-xf86bigfont-dev (>= 1.2.0),
+ x11proto-xf86dga-dev (>= 2.0.99.1),
+ x11proto-xf86vidmode-dev (>= 2.2.99.1),
+ x11proto-present-dev,
+ x11proto-dri3-dev,
+ xtrans-dev (>= 1.3.5),
+ libxau-dev (>= 1:1.0.5-2),
+ x11proto-input-dev (>= 2.3),
+ x11proto-dri2-dev (>= 2.8),
+ libxdmcp-dev (>= 1:0.99.1),
+ libxfont-dev (>= 1:2.0.1),
+ libxkbfile-dev (>= 1:0.99.1),
+ libpixman-1-dev (>= 0.27.2),
+ libpciaccess-dev (>= 0.12.901),
+ libgcrypt-dev,
+ nettle-dev,
+ libudev-dev (>= 151-3) [linux-any],
+ libselinux1-dev (>= 2.0.80) [linux-any],
+ libaudit-dev [linux-any],
+ x11proto-xf86dri-dev (>= 2.1.0),
+ libdrm-dev (>= 2.4.46) [!hurd-i386],
+ x11proto-gl-dev (>= 1.4.17),
+ libgl1-mesa-dev (>= 9.2),
+ libxmuu-dev (>= 1:0.99.1),
+ libxext-dev (>= 1:0.99.1),
+ libx11-dev (>= 2:1.6),
+ libxrender-dev (>= 1:0.9.0),
+ libxi-dev (>= 2:1.6.99.1),
+ x11proto-dmx-dev (>= 1:2.2.99.1),
+ libdmx-dev (>= 1:1.0.1),
+ libxpm-dev (>= 1:3.5.3),
+ libxaw7-dev (>= 1:0.99.1),
+ libxt-dev (>= 1:0.99.1),
+ libxmu-dev (>= 1:0.99.1),
+ libxtst-dev (>= 1:0.99.1),
+ libxres-dev (>= 1:0.99.1),
+ libxfixes-dev (>= 1:3.0.0),
+ libxv-dev,
+ libxinerama-dev,
+ libxshmfence-dev (>= 1.1) [!hurd-i386],
+# glamor
+ libepoxy-dev [linux-any kfreebsd-any],
+ libegl1-mesa-dev [linux-any kfreebsd-any],
+ libgbm-dev (>= 10.2) [linux-any kfreebsd-any],
+# unit tests
+ xkb-data,
+ x11-xkb-utils,
+# arc4random_buf(), getpeereid()
+ libbsd-dev,
+#logind
+  libdbus-1-dev (>= 1.0) [linux-any],
+# systemd-daemon
+  libsystemd-dev [linux-any],
+Standards-Version: 3.9.8
+Vcs-Git: https://anonscm.debian.org/git/pkg-tigervnc/pkg-tigervnc.git
+Vcs-Browser: https://anonscm.debian.org/gitweb/?p=pkg-tigervnc/pkg-tigervnc.git
+Homepage: http://www.tigervnc.org
+
+Package: tigervnc-common
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Conflicts:
+ tigervnc-server (<< 1.1.90),
+ tigervnc-viewer (<< 1.1.90)
+Description: Virtual network computing; Common software needed by servers
+ VNC stands for Virtual Network Computing. It is, in essence, a remote
+ display system which allows you to view a computing `desktop' environment
+ not only on the machine where it is running, but from anywhere on the
+ Internet and from a wide variety of machine architectures.
+ .
+ It is implemented in a client/server model. This package provides the
+ vncpasswd and vncconfig tools.
+
+Package: tigervnc-scraping-server
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Recommends:
+ tigervnc-common 
+Provides:
+ vnc-server
+Replaces: tigervnc-server (<< 1.1.90)
+Breaks: tigervnc-server (<< 1.1.90)
+Description: Virtual network computing server performing X screen scraping
+ VNC stands for Virtual Network Computing. It is, in essence, a remote
+ display system which allows you to view a computing `desktop' environment
+ not only on the machine where it is running, but from anywhere on the
+ Internet and from a wide variety of machine architectures.
+ .
+ This package provides a VNC server that perform screen scraping of an already
+ running X server to provide its VNC desktop. The VNC desktop can be viewed
+ by any VNC viewer even on other operating systems.
+ .
+ Note: If you only want to scrape your local X11 server, you should consider
+ the tigervnc-xorg-extension package. This package provides the vnc extension
+ for your local X11 server. The usage of this extension is more efficient
+ than a scraping vnc server.
+
+Package: tigervnc-standalone-server
+Architecture: any
+Depends:
+ xkb-data,
+ x11-xkb-utils,
+ xauth,
+ ${shlibs:Depends},
+ ${misc:Depends},
+ ${perl:Depends}
+Recommends:
+ tigervnc-common,
+ libgl1-mesa-dri (>= 7.1~rc1),
+ xfonts-base,
+ x11-xserver-utils
+Suggests:
+ xfonts-100dpi | xfonts-75dpi,
+ xfonts-scalable
+Provides:
+ vnc-server,
+ xserver
+Replaces: tigervnc-server (<< 1.1.90)
+Breaks: tigervnc-server (<< 1.1.90)
+Description: Standalone virtual network computing server 
+ VNC stands for Virtual Network Computing. It is, in essence, a remote
+ display system which allows you to view a computing `desktop' environment
+ not only on the machine where it is running, but from anywhere on the
+ Internet and from a wide variety of machine architectures.
+ .
+ This package provides a standalone VNC server to which clients can connect.
+ The server generates a display that can be viewed with a vncviewer.
+ .
+ Note: This server does not need a display. You need a VNC viewer to see
+ something. This viewer may also be on a computer running other operating
+ systems.
+
+Package: tigervnc-xorg-extension
+Architecture: any
+Depends:
+ xserver-xorg-core (>= 2:1.7.7),
+ ${shlibs:Depends},
+ ${misc:Depends},
+Recommends:
+ tigervnc-common 
+Provides:
+ vnc-server,
+ vnc-xorg-extension
+Replaces: tigervnc-server (<< 1.1.90)
+Breaks: tigervnc-server (<< 1.1.90)
+Description: Virtual network computing X server extension
+ VNC stands for Virtual Network Computing. It is, in essence, a remote
+ display system which allows you to view a computing `desktop' environment
+ not only on the machine where it is running, but from anywhere on the
+ Internet and from a wide variety of machine architectures.
+ .
+ This package contains an X server connector so VNC clients can connect to your
+ local X desktop directly.
+
+Package: tigervnc-viewer
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Suggests:
+ tigervnc-common
+Provides:
+ vncviewer,
+ vnc-viewer
+Description: Virtual network computing client for X
+ VNC stands for Virtual Network Computing. It is, in essence, a remote
+ display system which allows you to view a computing `desktop' environment
+ not only on the machine where it is running, but from anywhere on the
+ Internet and from a wide variety of machine architectures.
+ .
+ This package provides a VNC client for X. With this you can connect to a
+ VNC server and display its content. There are VNC servers available for other
+ operating systems.
+
+#Package: tigervnc-java
+#Architecture: all
+#Depends:
+# openjdk-7-jre
+#Provides:
+# vnc-java-viewer
+#Enhances:
+# tigervnc-standalone-server
+#Description: Virtual network computing java applet and command line program
+# VNC stands for Virtual Network Computing. It is, in essence, a remote
+# display system which allows you to view a computing `desktop' environment
+# not only on the machine where it is running, but from anywhere on the
+# Internet and from a wide variety of machine architectures.
+# .
+# It contains a java viewer implementation that can either be used as an applet,
+# typically served by the built in web server provided by Xvnc
+# (tigervnc-standalone-server) or from command line using a Java JRE.

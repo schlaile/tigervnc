@@ -1,0 +1,565 @@
+diff -urN -x .pc base/common/rfb/DesktopEndpoint.h tigervnc-1.7.0+dfsg/common/rfb/DesktopEndpoint.h
+--- base/common/rfb/DesktopEndpoint.h	1970-01-01 01:00:00.000000000 +0100
++++ tigervnc-1.7.0+dfsg/common/rfb/DesktopEndpoint.h	2026-10-08 20:00:56.683792630 +0200
+@@ -0,0 +1,57 @@
++/* Copyright 2026 Peter Schlaile
++ *
++ * This is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This software is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this software; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
++ * USA.
++ */
++
++// A side-channel service of the desktop, announced to clients with the
++// DesktopEndpoint pseudo-encoding (VNC File Drop, see
++// https://ps.schlaile.de/tigervnc/spec/).  Backport to TigerVNC 1.7.
++
++#ifndef __RFB_DESKTOPENDPOINT_H__
++#define __RFB_DESKTOPENDPOINT_H__
++
++#include <string>
++#include <vector>
++
++#include <rdr/types.h>
++
++namespace rfb {
++
++  // The client replaces the host of the URL with the host it used for
++  // the RFB connection
++  const rdr::U8 desktopEndpointSameHost = 1 << 0;
++
++  const rdr::U8 desktopEndpointVersion = 1;
++
++  const size_t desktopEndpointMaxService = 64;
++  const size_t desktopEndpointMaxURL = 2048;
++  const size_t desktopEndpointMaxToken = 1024;
++
++  struct DesktopEndpoint {
++    DesktopEndpoint() : flags(0) {}
++
++    // An endpoint with an empty URL is withdrawn
++    bool withdrawn() const { return url.empty(); }
++
++    std::string service;
++    rdr::U8 flags;
++    std::string url;
++    std::vector<rdr::U8> token;
++  };
++
++}
++
++#endif
+diff -urN -x .pc base/common/rfb/encodings.h tigervnc-1.7.0+dfsg/common/rfb/encodings.h
+--- base/common/rfb/encodings.h	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/encodings.h	2026-10-08 20:00:56.695792630 +0200
+@@ -56,6 +56,10 @@
+   const int pseudoEncodingSubsamp8X = -764;
+   const int pseudoEncodingSubsamp16X = -763;
+ 
++  // Side-channel endpoint of the desktop (VNC File Drop); private value
++  // until a number is registered
++  const int pseudoEncodingDesktopEndpoint = 0x46445031;
++
+   int encodingNum(const char* name);
+   const char* encodingName(int num);
+ }
+diff -urN -x .pc base/common/rfb/SMsgHandler.cxx tigervnc-1.7.0+dfsg/common/rfb/SMsgHandler.cxx
+--- base/common/rfb/SMsgHandler.cxx	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/SMsgHandler.cxx	2026-10-08 20:01:58.027792282 +0200
+@@ -18,6 +18,7 @@
+  */
+ #include <rfb/Exception.h>
+ #include <rfb/SMsgHandler.h>
++#include <rfb/encodings.h>
+ #include <rfb/ScreenSet.h>
+ 
+ using namespace rfb;
+@@ -41,10 +42,11 @@
+ 
+ void SMsgHandler::setEncodings(int nEncodings, const rdr::S32* encodings)
+ {
+-  bool firstFence, firstContinuousUpdates;
++  bool firstFence, firstContinuousUpdates, firstDesktopEndpoint;
+ 
+   firstFence = !cp.supportsFence;
+   firstContinuousUpdates = !cp.supportsContinuousUpdates;
++  firstDesktopEndpoint = !cp.supportsEncoding(pseudoEncodingDesktopEndpoint);
+ 
+   cp.setEncodings(nEncodings, encodings);
+ 
+@@ -54,6 +56,8 @@
+     supportsFence();
+   if (cp.supportsContinuousUpdates && firstContinuousUpdates)
+     supportsContinuousUpdates();
++  if (cp.supportsEncoding(pseudoEncodingDesktopEndpoint) && firstDesktopEndpoint)
++    supportsDesktopEndpoint();
+ }
+ 
+ void SMsgHandler::supportsLocalCursor()
+@@ -68,6 +72,10 @@
+ {
+ }
+ 
++void SMsgHandler::supportsDesktopEndpoint()
++{
++}
++
+ void SMsgHandler::setDesktopSize(int fb_width, int fb_height,
+                                  const ScreenSet& layout)
+ {
+diff -urN -x .pc base/common/rfb/SMsgHandler.h tigervnc-1.7.0+dfsg/common/rfb/SMsgHandler.h
+--- base/common/rfb/SMsgHandler.h	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/SMsgHandler.h	2026-10-08 20:00:56.695792630 +0200
+@@ -74,6 +74,11 @@
+     // this point if it is supported.
+     virtual void supportsContinuousUpdates();
+ 
++    // supportsDesktopEndpoint() is called the first time we detect that
++    // the client supports side-channel endpoints. The endpoints the
++    // desktop has set should be announced at this point.
++    virtual void supportsDesktopEndpoint();
++
+     ConnParams cp;
+   };
+ }
+diff -urN -x .pc base/common/rfb/SMsgWriter.cxx tigervnc-1.7.0+dfsg/common/rfb/SMsgWriter.cxx
+--- base/common/rfb/SMsgWriter.cxx	2026-10-08 19:53:48.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/SMsgWriter.cxx	2026-10-08 20:00:56.699792630 +0200
+@@ -162,6 +162,16 @@
+   return true;
+ }
+ 
++bool SMsgWriter::writeDesktopEndpoint(const DesktopEndpoint& endpoint)
++{
++  if (!cp->supportsEncoding(pseudoEncodingDesktopEndpoint))
++    return false;
++
++  desktopEndpointMsgs.push_back(endpoint);
++
++  return true;
++}
++
+ bool SMsgWriter::writeSetCursor()
+ {
+   if (!cp->supportsLocalCursor)
+@@ -186,6 +196,8 @@
+ {
+   if (needSetDesktopName)
+     return true;
++  if (!desktopEndpointMsgs.empty())
++    return true;
+   if (needSetCursor || needSetXCursor)
+     return true;
+   if (needNoDataUpdate())
+@@ -230,6 +242,7 @@
+   if (nRects != 0xFFFF) {
+     if (needSetDesktopName)
+       nRects++;
++    nRects += desktopEndpointMsgs.size();
+     if (needSetCursor)
+       nRects++;
+     if (needSetXCursor)
+@@ -342,6 +355,11 @@
+     writeSetDesktopNameRect(cp->name());
+     needSetDesktopName = false;
+   }
++
++  std::list<DesktopEndpoint>::const_iterator ei;
++  for (ei = desktopEndpointMsgs.begin(); ei != desktopEndpointMsgs.end(); ++ei)
++    writeDesktopEndpointRect(*ei);
++  desktopEndpointMsgs.clear();
+ }
+ 
+ void SMsgWriter::writeNoDataRects()
+@@ -434,6 +452,34 @@
+   os->writeString(name);
+ }
+ 
++void SMsgWriter::writeDesktopEndpointRect(const DesktopEndpoint& endpoint)
++{
++  if (!cp->supportsEncoding(pseudoEncodingDesktopEndpoint))
++    throw Exception("Client does not support desktop endpoints");
++  if (++nRectsInUpdate > nRectsInHeader && nRectsInHeader)
++    throw Exception("SMsgWriter::writeDesktopEndpointRect: nRects out of sync");
++  if (endpoint.service.size() > desktopEndpointMaxService ||
++      endpoint.url.size() > desktopEndpointMaxURL ||
++      endpoint.token.size() > desktopEndpointMaxToken)
++    throw Exception("SMsgWriter::writeDesktopEndpointRect: endpoint too long");
++
++  os->writeS16(0);
++  os->writeS16(0);
++  os->writeU16(0);
++  os->writeU16(0);
++  os->writeU32(pseudoEncodingDesktopEndpoint);
++  os->writeU8(desktopEndpointVersion);
++  os->writeU8(endpoint.flags);
++  os->pad(2);
++  os->writeU16(endpoint.service.size());
++  os->writeBytes(endpoint.service.data(), endpoint.service.size());
++  os->writeU16(endpoint.url.size());
++  os->writeBytes(endpoint.url.data(), endpoint.url.size());
++  os->writeU16(endpoint.token.size());
++  if (!endpoint.token.empty())
++    os->writeBytes(&endpoint.token[0], endpoint.token.size());
++}
++
+ void SMsgWriter::writeSetCursorRect(int width, int height,
+                                     int hotspotX, int hotspotY,
+                                     const void* data, const void* mask)
+diff -urN -x .pc base/common/rfb/SMsgWriter.h tigervnc-1.7.0+dfsg/common/rfb/SMsgWriter.h
+--- base/common/rfb/SMsgWriter.h	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/SMsgWriter.h	2026-10-08 20:00:56.695792630 +0200
+@@ -26,6 +26,8 @@
+ #include <rdr/types.h>
+ #include <rfb/encodings.h>
+ #include <rfb/ScreenSet.h>
++#include <rfb/DesktopEndpoint.h>
++#include <list>
+ 
+ namespace rdr { class OutStream; }
+ 
+@@ -76,6 +78,11 @@
+ 
+     bool writeSetDesktopName();
+ 
++    // writeDesktopEndpoint() announces (or withdraws) a side-channel
++    // endpoint as part of the next update; false if the client does not
++    // support it
++    bool writeDesktopEndpoint(const DesktopEndpoint& endpoint);
++
+     // Like setDesktopSize, we can't just write out a cursor message
+     // immediately. 
+     bool writeSetCursor();
+@@ -121,6 +128,7 @@
+                                       int fb_width, int fb_height,
+                                       const ScreenSet& layout);
+     void writeSetDesktopNameRect(const char *name);
++    void writeDesktopEndpointRect(const DesktopEndpoint& endpoint);
+     void writeSetCursorRect(int width, int height,
+                             int hotspotX, int hotspotY,
+                             const void* data, const void* mask);
+@@ -149,6 +157,8 @@
+     } ExtendedDesktopSizeMsg;
+ 
+     std::list<ExtendedDesktopSizeMsg> extendedDesktopSizeMsgs;
++
++    std::list<DesktopEndpoint> desktopEndpointMsgs;
+   };
+ }
+ #endif
+diff -urN -x .pc base/common/rfb/VNCSConnectionST.cxx tigervnc-1.7.0+dfsg/common/rfb/VNCSConnectionST.cxx
+--- base/common/rfb/VNCSConnectionST.cxx	2026-10-08 19:53:48.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/VNCSConnectionST.cxx	2026-10-08 20:00:56.703792630 +0200
+@@ -301,6 +301,19 @@
+ }
+ 
+ 
++void VNCSConnectionST::setDesktopEndpointOrClose(const DesktopEndpoint& endpoint)
++{
++  try {
++    if (state() != RFBSTATE_NORMAL)
++      return;
++    if (!writer()->writeDesktopEndpoint(endpoint))
++      return;
++    writeFramebufferUpdate();
++  } catch(rdr::Exception& e) {
++    close(e.str());
++  }
++}
++
+ void VNCSConnectionST::setCursorOrClose()
+ {
+   try {
+@@ -717,6 +730,14 @@
+ // cursor, we make sure that the old server-side rendered cursor is cleaned up
+ // and the cursor is sent to the client.
+ 
++void VNCSConnectionST::supportsDesktopEndpoint()
++{
++  const std::list<DesktopEndpoint>& endpoints(server->getDesktopEndpoints());
++  std::list<DesktopEndpoint>::const_iterator ei;
++  for (ei = endpoints.begin(); ei != endpoints.end(); ++ei)
++    writer()->writeDesktopEndpoint(*ei);
++}
++
+ void VNCSConnectionST::supportsLocalCursor()
+ {
+   if (cp.supportsLocalCursor || cp.supportsLocalXCursor) {
+diff -urN -x .pc base/common/rfb/VNCSConnectionST.h tigervnc-1.7.0+dfsg/common/rfb/VNCSConnectionST.h
+--- base/common/rfb/VNCSConnectionST.h	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/VNCSConnectionST.h	2026-10-08 20:00:56.703792630 +0200
+@@ -78,6 +78,7 @@
+     void bellOrClose();
+     void serverCutTextOrClose(const char *str, int len);
+     void setDesktopNameOrClose(const char *name);
++    void setDesktopEndpointOrClose(const DesktopEndpoint& endpoint);
+ 
+     // checkIdleTimeout() returns the number of milliseconds left until the
+     // idle timeout expires.  If it has expired, the connection is closed and
+@@ -144,6 +145,7 @@
+     virtual void enableContinuousUpdates(bool enable,
+                                          int x, int y, int w, int h);
+     virtual void supportsLocalCursor();
++    virtual void supportsDesktopEndpoint();
+     virtual void supportsFence();
+     virtual void supportsContinuousUpdates();
+ 
+diff -urN -x .pc base/common/rfb/VNCServer.h tigervnc-1.7.0+dfsg/common/rfb/VNCServer.h
+--- base/common/rfb/VNCServer.h	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/VNCServer.h	2026-10-08 20:00:56.703792630 +0200
+@@ -23,6 +23,7 @@
+ #define __RFB_VNCSERVER_H__
+ 
+ #include <rfb/UpdateTracker.h>
++#include <rfb/DesktopEndpoint.h>
+ #include <rfb/SSecurity.h>
+ #include <rfb/ScreenSet.h>
+ 
+@@ -80,6 +81,11 @@
+ 
+     // setName() tells the server what desktop title to supply to clients
+     virtual void setName(const char* name) = 0;
++
++    // setDesktopEndpoint() tells the server about a side-channel service
++    // of the desktop, to be announced to clients that support it. An
++    // endpoint with an empty URL withdraws the service.
++    virtual void setDesktopEndpoint(const DesktopEndpoint& endpoint) = 0;
+   };
+ }
+ #endif
+diff -urN -x .pc base/common/rfb/VNCServerST.cxx tigervnc-1.7.0+dfsg/common/rfb/VNCServerST.cxx
+--- base/common/rfb/VNCServerST.cxx	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/VNCServerST.cxx	2026-10-08 20:00:56.703792630 +0200
+@@ -400,6 +400,25 @@
+   }
+ }
+ 
++void VNCServerST::setDesktopEndpoint(const DesktopEndpoint& endpoint)
++{
++  std::list<DesktopEndpoint>::iterator ei;
++  for (ei = desktopEndpoints.begin(); ei != desktopEndpoints.end(); ++ei) {
++    if (ei->service == endpoint.service)
++      break;
++  }
++  if (ei != desktopEndpoints.end())
++    desktopEndpoints.erase(ei);
++  if (!endpoint.withdrawn())
++    desktopEndpoints.push_back(endpoint);
++
++  std::list<VNCSConnectionST*>::iterator ci, ci_next;
++  for (ci = clients.begin(); ci != clients.end(); ci = ci_next) {
++    ci_next = ci; ci_next++;
++    (*ci)->setDesktopEndpointOrClose(endpoint);
++  }
++}
++
+ void VNCServerST::add_changed(const Region& region)
+ {
+   if (comparer == NULL)
+diff -urN -x .pc base/common/rfb/VNCServerST.h tigervnc-1.7.0+dfsg/common/rfb/VNCServerST.h
+--- base/common/rfb/VNCServerST.h	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/common/rfb/VNCServerST.h	2026-10-08 20:00:56.703792630 +0200
+@@ -134,6 +134,11 @@
+     // clients
+     virtual void setName(const char* name_);
+ 
++    // setDesktopEndpoint() announces a side-channel service to the clients
++    virtual void setDesktopEndpoint(const DesktopEndpoint& endpoint);
++    const std::list<DesktopEndpoint>& getDesktopEndpoints() const
++      { return desktopEndpoints; }
++
+     // A QueryConnectionHandler, if supplied, is passed details of incoming
+     // connections to approve, reject, or query the user about.
+     //
+@@ -213,6 +218,7 @@
+     ScreenSet screenLayout;
+ 
+     CharArray name;
++    std::list<DesktopEndpoint> desktopEndpoints;
+ 
+     std::list<VNCSConnectionST*> clients;
+     VNCSConnectionST* pointerClient;
+diff -urN -x .pc base/unix/xserver/hw/vnc/vncExt.c tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/vncExt.c
+--- base/unix/xserver/hw/vnc/vncExt.c	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/vncExt.c	2026-10-08 20:01:31.667792432 +0200
+@@ -198,6 +198,10 @@
+   if (strncasecmp(param, "desktop", 7) == 0)
+     vncUpdateDesktopName();
+ 
++  // Announce the side channel for dropped files when it has changed
++  if (strncasecmp(param, "FileDropEndpoint", 16) == 0)
++    vncUpdateFileDropEndpoint();
++
+ deny:
+   free(param);
+ 
+diff -urN -x .pc base/unix/xserver/hw/vnc/vncExtInit.cc tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/vncExtInit.cc
+--- base/unix/xserver/hw/vnc/vncExtInit.cc	2026-10-08 19:53:48.000000000 +0200
++++ tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/vncExtInit.cc	2026-10-08 20:01:31.667792432 +0200
+@@ -21,7 +21,9 @@
+ #include <errno.h>
+ 
+ #include <set>
++#include <sstream>
+ #include <string>
++#include <vector>
+ 
+ #include <rfb/Configuration.h>
+ #include <rfb/Logger_stdio.h>
+@@ -72,6 +74,9 @@
+                             &rfb::Server::clientWaitTimeMillis);
+ rfb::IntParameter rfbport("rfbport", "TCP port to listen for RFB protocol",0);
+ rfb::StringParameter desktopName("desktop", "Name of VNC desktop","x11");
++rfb::StringParameter fileDropEndpoint("FileDropEndpoint",
++                                      "Side channel for files dropped onto the viewer, set by "
++                                      "the desktop session: [samehost ]URL TOKEN", "");
+ rfb::BoolParameter localhostOnly("localhost",
+                                  "Only allow connections from localhost",
+                                  false);
+@@ -83,7 +88,8 @@
+                                      true);
+ rfb::StringParameter allowOverride("AllowOverride",
+                                    "Comma separated list of parameters that can be modified using VNC extension.",
+-                                   "desktop,AcceptPointerEvents,SendCutText,AcceptCutText");
++                                   "desktop,AcceptPointerEvents,SendCutText,AcceptCutText,"
++                                   "FileDropEndpoint");
+ 
+ static PixelFormat vncGetPixelFormat(int scrIdx)
+ {
+@@ -220,6 +226,10 @@
+                                           vncFbstride[scr]);
+         vlog.info("created VNC server for screen %d", scr);
+ 
++        CharArray endpointStr(fileDropEndpoint.getData());
++        if (endpointStr.buf[0] != '\0')
++          vncUpdateFileDropEndpoint();
++
+         if (scr == 0 && vncInetdSock != -1 && listeners.empty()) {
+           network::Socket* sock = new network::TcpSocket(vncInetdSock);
+           desktop[scr]->addClient(sock, false);
+@@ -296,6 +306,47 @@
+   }
+ }
+ 
++// "[samehost ]URL TOKEN", empty: withdrawn
++static rfb::DesktopEndpoint parseFileDropEndpoint(const char* value)
++{
++  rfb::DesktopEndpoint endpoint;
++  std::istringstream in(value);
++  std::vector<std::string> words;
++  std::string word;
++  size_t first = 0;
++
++  endpoint.service = "file-drop";
++
++  while (in >> word)
++    words.push_back(word);
++
++  if (!words.empty() && words[0] == "samehost") {
++    endpoint.flags |= rfb::desktopEndpointSameHost;
++    first = 1;
++  }
++
++  if (words.size() - first == 2) {
++    endpoint.url = words[first];
++    endpoint.token.assign(words[first + 1].begin(), words[first + 1].end());
++  } else if (words.size() != 0) {
++    vlog.error("Invalid FileDropEndpoint, expected \"[samehost ]URL TOKEN\"");
++  }
++
++  return endpoint;
++}
++
++void vncUpdateFileDropEndpoint(void)
++{
++  CharArray value(fileDropEndpoint.getData());
++  rfb::DesktopEndpoint endpoint(parseFileDropEndpoint(value.buf));
++
++  for (int scr = 0; scr < vncGetScreenCount(); scr++) {
++    if (desktop[scr] == NULL)
++      continue;
++    desktop[scr]->setDesktopEndpoint(endpoint);
++  }
++}
++
+ void vncServerCutText(const char *text, size_t len)
+ {
+   for (int scr = 0; scr < vncGetScreenCount(); scr++) {
+diff -urN -x .pc base/unix/xserver/hw/vnc/vncExtInit.h tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/vncExtInit.h
+--- base/unix/xserver/hw/vnc/vncExtInit.h	2026-10-08 19:53:48.000000000 +0200
++++ tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/vncExtInit.h	2026-10-08 20:01:31.667792432 +0200
+@@ -65,6 +65,7 @@
+ int vncGetAvoidShiftNumLock(void);
+ 
+ void vncUpdateDesktopName(void);
++void vncUpdateFileDropEndpoint(void);
+ 
+ void vncServerCutText(const char *text, size_t len);
+ 
+diff -urN -x .pc base/unix/xserver/hw/vnc/XserverDesktop.cc tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/XserverDesktop.cc
+--- base/unix/xserver/hw/vnc/XserverDesktop.cc	2026-10-08 19:53:48.000000000 +0200
++++ tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/XserverDesktop.cc	2026-10-08 20:01:31.667792432 +0200
+@@ -364,6 +364,15 @@
+   }
+ }
+ 
++void XserverDesktop::setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint)
++{
++  try {
++    server->setDesktopEndpoint(endpoint);
++  } catch (rdr::Exception& e) {
++    vlog.error("XserverDesktop::setDesktopEndpoint: %s",e.str());
++  }
++}
++
+ void XserverDesktop::setCursor(int width, int height, int hotX, int hotY,
+                                const unsigned char *rgbaData)
+ {
+diff -urN -x .pc base/unix/xserver/hw/vnc/XserverDesktop.h tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/XserverDesktop.h
+--- base/unix/xserver/hw/vnc/XserverDesktop.h	2026-10-08 19:53:48.000000000 +0200
++++ tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/XserverDesktop.h	2026-10-08 20:01:31.667792432 +0200
+@@ -32,6 +32,7 @@
+ #include <stdint.h>
+ 
+ #include <rfb/SDesktop.h>
++#include <rfb/DesktopEndpoint.h>
+ #include <rfb/HTTPServer.h>
+ #include <rfb/PixelBuffer.h>
+ #include <rfb/Configuration.h>
+@@ -66,6 +67,7 @@
+   void bell();
+   void serverCutText(const char* str, int len);
+   void setDesktopName(const char* name);
++  void setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint);
+   void setCursor(int width, int height, int hotX, int hotY,
+                  const unsigned char *rgbaData);
+   void add_changed(const rfb::Region &region);
+diff -urN -x .pc base/unix/xserver/hw/vnc/Xvnc.man tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/Xvnc.man
+--- base/unix/xserver/hw/vnc/Xvnc.man	2016-09-08 12:31:18.000000000 +0200
++++ tigervnc-1.7.0+dfsg/unix/xserver/hw/vnc/Xvnc.man	2026-10-08 20:01:31.667792432 +0200
+@@ -31,6 +31,15 @@
+ command-line and through the \fBvncconfig\fP(1) program.
+ 
+ .TP
++.B \-FileDropEndpoint \fI[samehost ]URL TOKEN\fP
++Announce a side channel to viewers that support it, where files dropped onto
++the viewer are offered and uploaded (VNC File Drop). It is normally set by the
++desktop session at run time, for example with
++\fBvncconfig \-set FileDropEndpoint=...\fP. With \fBsamehost\fP, viewers
++replace the host of the URL with the host they used to connect. An empty value
++withdraws the endpoint. Default is empty.
++.
++.TP
+ .B \-geometry \fIwidth\fPx\fIheight\fP
+ Specify the size of the desktop to be created. Default is 1024x768.
+ .

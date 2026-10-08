@@ -1,0 +1,329 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -163,6 +163,36 @@ if(NOT DEFINED ENABLE_NLS OR ENABLE_NLS)
+   endif()
+ endif()
+ 
++# Check for libwrap
++option(ENABLE_LIBWRAP "Enable tcp wrappers support via libwrap")
++if(NOT DEFINED ENABLE_LIBWRAP OR ENABLE_LIBWRAP)
++  set(CMAKE_REQUIRED_LIBRARIES wrap)
++  set(LIBWRAP_TEST_SOURCE "\n
++    #include <tcpd.h>\n
++    int main(void) {\n
++      struct request_info request;\n
++      request_init(&request, RQ_DAEMON, \"Xvnc\", RQ_FILE, /* scoket fd */ 13, 0);\n
++      fromhost(&request);\n
++      if ( !STR_EQ(eval_hostname(request.client), paranoid) ) {\n
++        /* request is ok so far */\n
++        fix_options(&request);\n
++        if (hosts_access(&request))\n
++          /* request passed */\n
++          return 0;\n
++      }\n
++      return -1;\n
++    }\n")
++  check_c_source_compiles("${LIBWRAP_TEST_SOURCE}" HAVE_LIBWRAP)
++  if(NOT HAVE_LIBWRAP AND ENABLE_LIBWRAP)
++    message(FATAL_ERROR "libwrap support requested, but library was not found!")
++  elseif(NOT HAVE_LIBWRAP)
++    message(STATUS "WARNING: Libwrap not found, tcp wrappers access control has been disabled.")
++  else()
++    set(LIBWRAP_LIBS ${CMAKE_REQUIRED_LIBRARIES})
++  endif()
++  set(CMAKE_REQUIRED_LIBRARIES)
++endif()
++
+ # Check for libjpeg
+ find_package(JPEG REQUIRED)
+ 
+--- a/common/network/CMakeLists.txt
++++ b/common/network/CMakeLists.txt
+@@ -1,7 +1,20 @@
+ include_directories(${CMAKE_SOURCE_DIR}/common)
++include_directories(${CMAKE_BINARY_DIR}/common) # for generated NetConfig.h
++
++if(HAVE_LIBWRAP)
++  set(NETWORK_SOURCES   ${NETWORK_SOURCES}   TcpWrappersFilter.cxx)
++  set(NETWORK_LIBRARIES ${NETWORK_LIBRARIES} ${LIBWRAP_LIBS})
++endif()
+ 
+ add_library(network STATIC
+-  TcpSocket.cxx)
++  TcpSocket.cxx
++  ${NETWORK_SOURCES}
++  )
++
++target_link_libraries(network ${NETWORK_LIBRARIES})
++
++# Generate NetConfig.h
++configure_file(NetConfig.h.in NetConfig.h)
+ 
+ if(WIN32)
+ 	target_link_libraries(network ws2_32)
+--- /dev/null
++++ b/common/network/NetConfig.h.in
+@@ -0,0 +1,2 @@
++/* Define if you want to include libwrap support */
++#cmakedefine HAVE_LIBWRAP
+--- a/common/network/TcpSocket.h
++++ b/common/network/TcpSocket.h
+@@ -28,6 +28,7 @@
+ #ifndef __NETWORK_TCP_SOCKET_H__
+ #define __NETWORK_TCP_SOCKET_H__
+ 
++#include <network/NetConfig.h>
+ #include <network/Socket.h>
+ 
+ #ifdef WIN32
+@@ -122,6 +123,17 @@ namespace network {
+     std::list<Pattern> filter;
+   };
+ 
++#ifdef HAVE_LIBWRAP
++  class TcpWrappersFilter : public ConnectionFilter {
++  public:
++    TcpWrappersFilter(const char* service_);
++    virtual ~TcpWrappersFilter();
++    
++    virtual bool verifyConnection(Socket* s);
++  protected:
++    char *service;
++  };
++#endif // HAVE_LIBWRAP
+ }
+ 
+ #endif // __NETWORK_TCP_SOCKET_H__
+--- /dev/null
++++ b/common/network/TcpWrappersFilter.cxx
+@@ -0,0 +1,106 @@
++/* Copyright (C) 2002-2004 RealVNC Ltd.  All Rights Reserved.
++ *    
++ * This is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ * 
++ * This software is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ * 
++ * You should have received a copy of the GNU General Public License
++ * along with this software; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
++ * USA.
++ */
++
++#include <network/TcpSocket.h>
++
++#ifdef HAVE_LIBWRAP
++
++#define PARANOID
++#define KILL_IP_OPTIONS
++
++#include <stdlib.h>
++
++extern "C" {
++#include <tcpd.h>
++/*
++ * missing in tcpd.h:
++ *  - fix_options - get rid of IP-level socket options 
++ */
++void fix_options(struct request_info *request);
++}
++
++#include <rfb/util.h>
++#include <rfb/LogWriter.h>
++
++namespace network {
++
++using namespace rdr;
++
++static rfb::LogWriter vlog("TcpWrappersFilter");
++
++TcpWrappersFilter::TcpWrappersFilter(const char* service_)
++  : service(rfb::strDup(service_)) {}
++
++TcpWrappersFilter::~TcpWrappersFilter() {
++  free(service);
++}
++
++bool
++TcpWrappersFilter::verifyConnection(Socket* s) {
++  rfb::CharArray name;
++  struct request_info request;
++  
++  name.buf = s->getPeerAddress();
++  /*
++   * Find out the endpoint addresses of this conversation. Host name
++   * lookups and double checks will be done on demand.
++   */
++  
++  request_init(&request, RQ_DAEMON, service, RQ_FILE, s->getFd(), 0);
++  fromhost(&request);
++  
++  /*
++   * Optionally look up and double check the remote host name. Sites
++   * concerned with security may choose to refuse connections from hosts
++   * that pretend to have someone elses host name.
++   */
++  
++#ifdef PARANOID
++  if ( !STR_EQ(eval_hostname(request.client), paranoid) )
++    /* request is ok so far */
++#endif
++  {
++    /*
++     * The BSD rlogin and rsh daemons that came out after 4.3 BSD disallow
++     * socket options at the IP level. They do so for a good reason.
++     * Unfortunately, we cannot use this with SunOS 4.1.x because the
++     * getsockopt() system call can panic the system.
++     */
++    
++#ifdef KILL_IP_OPTIONS
++    fix_options(&request);
++#endif
++    
++    /*
++     * Check whether this host can access the service in argv[0]. The
++     * access-control code invokes optional shell commands as specified in
++     * the access-control tables.
++     */
++    
++    if (hosts_access(&request))
++      /* request passed */
++      return true;
++  }
++  /* request refused */
++  vlog.debug("[REJECT] %s", name.buf);
++  return false;
++}
++
++} // namespace network
++
++#endif // HAVE_LIBWRAP
+--- a/common/rfb/CMakeLists.txt
++++ b/common/rfb/CMakeLists.txt
+@@ -1,4 +1,5 @@
+ include_directories(${CMAKE_SOURCE_DIR}/common ${JPEG_INCLUDE_DIR})
++include_directories(${CMAKE_BINARY_DIR}/common) # for generated NetConfig.h
+ 
+ set(RFB_SOURCES
+   Blacklist.cxx
+--- a/unix/x0vncserver/CMakeLists.txt
++++ b/unix/x0vncserver/CMakeLists.txt
+@@ -2,6 +2,7 @@ include_directories(${X11_INCLUDE_DIR})
+ include_directories(${CMAKE_SOURCE_DIR}/unix/tx)
+ include_directories(${CMAKE_SOURCE_DIR}/unix)
+ include_directories(${CMAKE_SOURCE_DIR}/common)
++include_directories(${CMAKE_BINARY_DIR}/common) # for generated NetConfig.h
+ 
+ add_executable(x0vncserver
+   buildtime.c
+--- a/unix/x0vncserver/x0vncserver.cxx
++++ b/unix/x0vncserver/x0vncserver.cxx
+@@ -501,8 +501,12 @@ int main(int argc, char** argv)
+     if (strlen(hostsData) != 0)
+       for (std::list<TcpListener>::iterator i = listeners.begin();
+            i != listeners.end();
+-           i++)
++           i++) {
+         (*i).setFilter(&fileTcpFilter);
++#ifdef HAVE_LIBWRAP
++        (*i).setFilter(new TcpWrappersFilter("Xvnc"));
++#endif
++      }
+     delete[] hostsData;
+ 
+     PollingScheduler sched((int)pollingCycle, (int)maxProcessorUsage);
+--- a/unix/xserver/hw/vnc/Makefile.am
++++ b/unix/xserver/hw/vnc/Makefile.am
+@@ -14,6 +14,8 @@ HDRS = vncExtInit.h vncHooks.h \
+ 	XserverDesktop.h xorg-version.h \
+ 	Input.h RFBGlue.h
+ 
++XVNC_CPPFLAGS = @XVNC_CPPFLAGS@ -I$(LIB_DIR)
++
+ libvnccommon_la_SOURCES = $(HDRS) vncExt.c vncExtInit.cc vncHooks.c \
+ 	vncBlockHandler.c XorgGlue.c RFBGlue.cc XserverDesktop.cc \
+ 	Input.c InputXKB.c
+--- a/unix/xserver/hw/vnc/XserverDesktop.cc
++++ b/unix/xserver/hw/vnc/XserverDesktop.cc
+@@ -465,6 +465,11 @@ void XserverDesktop::readWakeupHandler(f
+           sock->outStream().setBlocking(false);
+           server->addSocket(sock);
+           vlog.debug("new client, sock %d",sock->getFd());
++          if (sock != NULL) {
++            sock->outStream().setBlocking(false);
++            server->addSocket(sock);
++            vlog.debug("new client, sock %d",sock->getFd());
++          }
+         }
+       }
+ 
+@@ -477,7 +482,12 @@ void XserverDesktop::readWakeupHandler(f
+           sock->outStream().setBlocking(false);
+           httpServer->addSocket(sock);
+           vlog.debug("new http client, sock %d",sock->getFd());
+-        }
++          if (sock != NULL) {
++            sock->outStream().setBlocking(false);
++            httpServer->addSocket(sock);
++            vlog.debug("new http client, sock %d",sock->getFd());
++          }
++       }
+       }
+ 
+       std::list<Socket*> sockets;
+--- a/unix/xserver/hw/vnc/vncExtInit.cc
++++ b/unix/xserver/hw/vnc/vncExtInit.cc
+@@ -141,6 +141,9 @@ void vncExtensionInit(void)
+               !network::TcpSocket::isConnected(vncInetdSock))
+           {
+             listeners.push_back (network::TcpListener(vncInetdSock));
++#ifdef HAVE_LIBWRAP
++            listeners.back().setFilter(new network::TcpWrappersFilter("Xvnc"));
++#endif
+             vlog.info("inetd wait");
+           }
+         } else {
+@@ -158,6 +161,13 @@ void vncExtensionInit(void)
+           vlog.info("Listening for VNC connections on %s interface(s), port %d",
+                     localhostOnly ? "local" : (const char*)interface,
+                     port);
++#ifdef HAVE_LIBWRAP
++          for (std::list<network::TcpListener>::iterator i = listeners.begin();
++               i != listeners.end();
++               i++) {
++              (*i).setFilter(new network::TcpWrappersFilter("Xvnc"));
++          }
++#endif
+ 
+           CharArray httpDirStr(httpDir.getData());
+           if (httpDirStr.buf[0]) {
+@@ -168,7 +178,13 @@ void vncExtensionInit(void)
+               network::createLocalTcpListeners(&httpListeners, port);
+             else
+               network::createTcpListeners(&httpListeners, addr, port);
+-
++#ifdef HAVE_LIBWRAP
++            for (std::list<network::TcpListener>::iterator i = listeners.begin();
++                 i != listeners.end();
++                 i++) {
++                (*i).setFilter(new network::TcpWrappersFilter("Xvnc"));
++            }
++#endif
+             vlog.info("Listening for HTTP connections on %s interface(s), port %d",
+                       localhostOnly ? "local" : (const char*)interface,
+                       port);
+--- a/vncviewer/CMakeLists.txt
++++ b/vncviewer/CMakeLists.txt
+@@ -2,6 +2,7 @@ include_directories(${FLTK_INCLUDE_DIR})
+ include_directories(${GETTEXT_INCLUDE_DIR})
+ 
+ include_directories(${CMAKE_SOURCE_DIR}/common)
++include_directories(${CMAKE_BINARY_DIR}/common) # for generated NetConfig.h
+ set(VNCVIEWER_SOURCES
+   menukey.cxx
+   CConn.cxx

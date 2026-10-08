@@ -1,0 +1,4 @@
+version=3
+opts="dversionmangle=s/.dfsg$//,filenamemangle=s/.*v([\d\.]+)\..*/tigervnc_$1.orig.tar.gz/" \
+ https://github.com/TigerVNC/tigervnc/releases .*/archive/v([\d\.]+)\.(?:tgz|tbz2|txz|tar\.(?:gz|bz2|xz))
+

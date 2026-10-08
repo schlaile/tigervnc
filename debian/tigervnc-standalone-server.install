@@ -1,0 +1,6 @@
+usr/bin/Xtigervnc usr/bin
+usr/bin/tigervncserver usr/bin
+etc/tigervnc/ecparams.pem etc/tigervnc
+etc/tigervnc/ssleay.cnf etc/tigervnc
+etc/vnc.conf etc
+etc/X11/Xvnc-session etc/X11

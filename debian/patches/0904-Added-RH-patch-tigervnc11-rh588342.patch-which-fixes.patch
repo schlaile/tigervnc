@@ -1,0 +1,37 @@
+From dfcee5fe0799a0b05c82df5101ee37e221502ac9 Mon Sep 17 00:00:00 2001
+From: Joachim Falk <joachim.falk@gmx.de>
+Date: Thu, 13 Oct 2011 19:53:42 +0200
+Subject: [PATCH 4/7] Added RH patch tigervnc11-rh588342.patch which fixes EQ overflowing bug.
+
+Xvnc could become unresponsive and the following error message was shown
+in the log: "[mi] EQ overflowing. The server is probably stuck in an
+infinite loop.". This was caused by a large number of user input events
+in the Xvnc event queue, which were being processed too slowly. With
+this update, this issue no longer occurs and the system works as
+expected. (BZ#588342)
+---
+ unix/xserver/hw/vnc/Input.cc |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+--- a/unix/xserver/hw/vnc/Input.c
++++ b/unix/xserver/hw/vnc/Input.c
+@@ -124,6 +124,9 @@
+ 	ValuatorMask mask;
+ #endif
+ 
++	/* Flush event queue to ensure we don't flood it */
++	mieqProcessInputEvents();
++
+ 	for (i = 0; i < BUTTONS; i++) {
+ 		if ((buttonMask ^ oldButtonMask) & (1 << i)) {
+ 			int action = (buttonMask & (1<<i)) ?
+@@ -163,6 +166,9 @@
+ 	if (cursorPosX == x && cursorPosY == y)
+ 		return;
+ 
++	/* Flush event queue to ensure we don't flood it */
++	mieqProcessInputEvents();
++
+ 	valuators[0] = x;
+ 	valuators[1] = y;
+ #if XORG < 110

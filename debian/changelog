@@ -1,0 +1,521 @@
+tigervnc (1.7.0+dfsg-7+deb9u1+wws1) stretch; urgency=medium
+
+  * Announce the side channel of VNC File Drop: DesktopEndpoint
+    pseudo-encoding and Xvnc parameter FileDropEndpoint, settable through
+    the VNC extension (backport from github.com/schlaile/tigervnc, branch
+    file-drop; https://ps.schlaile.de/tigervnc/spec/).
+
+ -- Peter Schlaile <peter@schlaile.de>  Thu, 08 Oct 2026 20:30:00 +0200
+
+tigervnc (1.7.0+dfsg-7+deb9u1) stretch; urgency=high
+
+  [ Joachim Falk ]
+  * Fix CVE-2019-15691, CVE-2019-15692, CVE-2019-15693, CVE-2019-15694, and
+    CVE-2019-15695 (Closes: #947428)
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sat, 18 Jan 2020 19:30:42 +0100
+
+tigervnc (1.7.0+dfsg-7) unstable; urgency=high
+
+  [ Joachim Falk ]
+  * Fixed the following security vulnerabilities (Closes: #859259):
+  - Fix SSecurityVeNCrypt.cxx; SSecurityVeNCrypt::SSecurityVeNCrypt.
+    An unauthenticated client can cause a small memory leak in the server.
+    (CVE-2017-7392)
+  - Fix VNCSConnectionST.cxx VNCSConnectionST::fence. An authenticated client
+    can cause a double free, leading to denial of service or potentially code
+    execution. (CVE-2017-7393)
+  - Fix SSecurityPlain.cxx SSecurityPlain::processMsg. An unauthenticated
+    users can crash the server by sending long usernames. (CVE-2017-7394)
+  - Fix SMsgReader.cxx SMsgReader::readClientCutText. An authenticated client
+    can crash the server by causing an integer overflow. (CVE-2017-7395)
+  - Fix CConnection.cxx CConnection::CConnection. An unauthenticated client
+    can cause a small memory leak in the server. (CVE-2017-7396)
+  * The tigervncserver wrapper script gives up and kills the server it
+    just started if it doesn't have its VNC-TCP and X11-unix sockets up and
+    running within a second. However, if a machine is a bit bogged down,
+    this can prevent starting the server at all, for no good reason.
+    Thus, the timeout has been increased to 30 seconds. (Closes: #859141)
+  * Refreshed dependencies for Xtigervnc server build from xorg-server-1.19.2
+    used in stretch. (Closes: #858048)
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Sun, 09 Apr 2017 10:38:13 -0400
+
+tigervnc (1.7.0+dfsg-6) unstable; urgency=high
+
+  [ Joachim Falk ]
+  * Fix server side cursor support for Xorg server >= 1.19. Closes: #852639
+  * Applied upstream patch [PATCH] Fix -inetd not working with xserver >=
+    1.19. Closes: #852633.
+  * Fixed documentation of default value for -depth option in tigervncserver
+    man page.
+
+ -- Ola Lundqvist <opal@debian.org>  Thu, 09 Feb 2017 23:51:56 +0100
+
+tigervnc (1.7.0+dfsg-5) unstable; urgency=medium
+
+  [ Ola Lundqvist ]
+  Just added bug closing information for the default depth change.
+
+  [ Joachim Falk ]
+  * Changed default -depth from 32 to 24 to heed warning in man Xtigervnc.
+    Closes: #854096.
+
+ -- Ola Lundqvist <opal@debian.org>  Sat, 04 Feb 2017 01:55:24 +0100
+
+tigervnc (1.7.0+dfsg-4) unstable; urgency=medium
+
+  * Make sure libtool do not complain about missing symbol.
+    Closes: #851842.
+
+ -- Ola Lundqvist <opal@debian.org>  Mon, 30 Jan 2017 13:04:13 +0000
+
+tigervnc (1.7.0+dfsg-3) unstable; urgency=high
+
+  [ Salvatore Bonaccorso ]
+  * Fix buffer overflow in ModifiablePixelBuffer::fillRect (CVE-2017-5581)
+    (Closes: #852213)
+
+  [ Joachim Falk ]
+  * Shut up lintian manpage-has-errors-from-man for vnc.conf.5x.gz
+    Basically the default value for $sslAutoGenCertCommand is too large
+    to fit into a 80 column manpage output. Broke that into multiple
+    lines.
+
+ -- Ola Lundqvist <opal@debian.org>  Sat, 28 Jan 2017 21:08:53 +0100
+
+tigervnc (1.7.0+dfsg-2) unstable; urgency=high
+
+  [ Ola Lundqvist ]
+  * Increased the update-alternatives priority so that this package will
+    have precedence over tightvnc and vnc4 that we hope to soon replace.
+
+  [ Joachim Falk ]
+  * Fixed spurious next cmd; in tigervncserver wrapper script. Leads to bug if
+    tigervnc-common package is also installed. Closes: #849996 and
+    Closes: #850054.
+  * Fixed bug if killing a non-existing tigervncserver, i.e.,
+    tigervncserver -kill :17
+    Use of uninitialized value $pid in concatenation (.) or string at
+    /usr/bin/tigervncserver line 493.
+    Can't kill a non-numeric process ID at /usr/bin/tigervncserver line 495.
+    Killing Xtigervnc process ID ...
+  * Fixed bug in tigervncserver wrapper script. An option -localhost without
+    an argument is true, i.e., only listen on localhost for vnc connections,
+    not false!
+  * Fixed bug in tigervncserver wrapper script. Correctly propagate -localhost
+    option to remote host if tigervncserver should start the Xtigervnc server
+    on a remote host via ssh, e.g., as requested by the following command:
+      - tigervncserver -localhost no <some remote server>:nn.
+  * Fixed bug in tigervncserver wrapper script. Now allow -list and -kill
+    commands to be executed on a remote host, e.g., as requested by the
+    following commands:
+      - tigervncserver -kill <some remote server>[:nn] or
+      - tigervncserver -list <some remote server>.
+  * Feature: Be a little more helpful after a remote tigervncserver sessions
+    has been started. Give the user the xtigervncviewer command that can be
+    used to connect to the started remote session.
+  * Fixed support for security types Plain, TLSPlain, and X509Plain. We now
+    have support for the -SecurityTypes option in the tigervncserver wrapper
+    script. Moreover, we now ship a tigervnc PAM service file required for
+    password authentication via PAM in the tigervncserver-common package. The
+    presence of tigervncserver-common will also be checked by the
+    tigervncserver wrapper script if at least one of the three plain security
+    types is used.
+  * Feature: Better support for security types X509None, X509Vnc, and
+    X509Plain.  We now have support for the -X509Cert and -X509Key options in
+    the tigervncserver wrapper script. Moreover, if the user does not specify
+    a certificate and key when at least one of the three X509 security types
+    is used, then we will generate a self signed certificate for the tigervnc
+    server if it is not already present.
+  * Update the descriptions in /etc/vnc.conf to conform to the real behavior
+    and options of the tigervncserver wrapper script. Reordered default option
+    definitions in the tigervncserver wrapper script to conform to the order
+    the options are documented in the /etc/vnc.conf configuration file.
+  * Fixed bug in tigervncserver wrapper script. The option $getDefaultFrom is
+    documented in the /etc/vnc.conf configuration file, but was ignored in the
+    wrapper script.
+  * Some love for the -xdisplaydefaults and -wmDecoration options. Now only
+    apply -wmDecoration shrinkage if -xdisplaydefaults is used.  The geometry
+    specified in /etc/vnc.conf and ~/.vnc/vnc.conf is no longer influenced by
+    wmDecoration. This is now the same behavior as the geometry specified by
+    the commonalind via -g NNxMM. Morover, use reasonable defaults for
+    -wmDecoration for the desktops contained in debian stretch.
+  * Fixed bug in tigervncserver wrapper script. The option -useold should
+    start a tigervncserver if it is not already running and not complain that
+    there is none running. This already worked when a desired display number
+    was given, but did not work when no display number was specified.
+  * Updated tigervncserver man page.
+  * Feature: Implement the -xstartup and -noxstartup options in the
+    tigervncserver wrapper script. These options are from the vncserver
+    wrapper script shipped with TigerVNC. Let our startup script be compatible
+    with theirs. These options are already documented in the updated
+    tigervncserver man page.
+  * Security hardening: The user can easily expose a VNC server to the
+    internet without any authentication by specifying tigervncserver
+    -localhost no -SecurityTypes None|TLSNone|X509None.  Moreover, previously
+    we switched the default from -localhost yes to -localhost no when a TLS*
+    or X509* security type was given via -SecurityTypes. From now on, we will
+    give a stern warning and refuse to start the VNC server when a *None
+    security type is combined with -localhost no. To continue, the user has to
+    provide the option --I-KNOW-THIS-IS-INSECURE.  If a *None security type is
+    used with localhost access, the user will merely get a polite warning.
+  * Fixed bug in tigervncserver wrapper script when options are forwarded to a
+    remote tigervncserver script. In this case, the ssh call introduces one
+    level of shell execution. Thus, the options must be shell escaped.
+  * Updated vnc.conf man page.
+
+ -- Ola Lundqvist <opal@debian.org>  Thu, 05 Jan 2017 23:35:23 +0100
+
+tigervnc (1.7.0+dfsg-1) unstable; urgency=high
+
+  [ Joachim Falk ]
+  * Make include /usr/share/xserver-xorg/configure_flags.mk optional.
+    This change enables the creation of a source deb without having all the
+    build dependencies installed, i.e., dpkg-buildpackage -d -S.
+  * Fixed stale pidfile condition detection and cleanup in tigervncserver
+    wrapper script.
+  * Fixed syntax error in tigervncserver wrapper script. Closes: #849963.
+  * Fixed default startup script generation in tigervncserver wrapper script
+    if the user specifies a custom vncStartup, e.g.,
+    $vncStartup = "$ENV{HOME}/.vnc/Xvnc-session"; in ~/.vnc/vnc.conf
+
+  [ Liang Guo ]
+  * Generate 1.7.0+dfsg.orig
+  * Refresh d/copyright
+
+  [ Ola Lundqvist ]
+  * Updated the package descriptions.
+
+ -- Ola Lundqvist <opal@debian.org>  Mon, 02 Jan 2017 22:51:08 +0100
+
+tigervnc (1.7.0-2) unstable; urgency=high
+
+  * Most of CVE-2014-8241 was already corrected but this update correct
+    one missing part of that CVE. Closes: #849478.
+  * Added a versioned dependency on xorg source.
+
+ -- Ola Lundqvist <opal@debian.org>  Thu, 29 Dec 2016 22:04:35 +0000
+
+tigervnc (1.7.0-1) unstable; urgency=high
+
+  * Fresh upstream that help to solve #843543.
+   - Modified a special patch for VeNCrypt support as it all parts that made
+     sense is already in there.
+   - Removed a few patches that are already applied upstream.
+   - Did quilt refresh on a few more.
+  * Correction to make it build against xorg source 1.19. Closes: #843543.
+  * Security correction for CVE-2014-8240 that corrects an integer overflow
+    flaw, leading to a heap-based buffer overflow in screen size handling.
+    Closes: #849479.
+  * Security correction for CVE-2014-8240 that corrects an integer overflow
+    flaw, leading to a heap-based buffer overflow in screen size handling.
+    Closes: #849479.
+
+ -- Ola Lundqvist <opal@debian.org>  Mon, 28 Nov 2016 23:20:20 +0100
+
+tigervnc (1.6.0+dfsg-4) unstable; urgency=medium
+
+  * Re-build to solve library dependency problem. Closes: #841288.
+
+ -- Ola Lundqvist <opal@debian.org>  Thu, 20 Oct 2016 22:39:36 +0200
+
+tigervnc (1.6.0+dfsg-3) unstable; urgency=medium
+
+  * Vncviewer alternatives are now correctly removed at package removal.
+    Closes: #840828.
+  * Improved the debian/rules clean target.
+  * Update alternatives gracefully handle non-existing files so the check
+    is removed to ensure it is called in all cases.
+
+ -- Ola Lundqvist <opal@debian.org>  Sat, 15 Oct 2016 22:42:51 +0200
+
+tigervnc (1.6.0+dfsg-2) unstable; urgency=medium
+
+  [ Ola Lundqvist ]
+  * Corrected debian/copyright to fix all lintian warnings.
+  * Fixed a clean problem in debian/rules that prevented dh_clean from
+    being run.
+  * Adjusted one of the patch files to allow building also on jessie.
+
+  [ Yaroslav Halchenko ]
+  * In hope again to provide acceptable Debian package (Closes: #650394)
+  * debian/copyright
+    - minor reformatting to avoid spurious tabs, trailing spaces
+    - disambiguate short license names for two pieces with BSD-style licenses
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Sun, 04 Sep 2016 22:34:45 -0400
+
+tigervnc (1.6.0+dfsg-1) UNRELEASED; urgency=medium
+
+  * Fresh attempt to upload to unstable
+  * New upstrem release
+  * All active patches placed under debian/patches
+    - Refresh all patches
+    - add fix-build-error-with-xserver-1.18.patch
+  * Updated standards version to 3.9.8
+  * Switch to canonical URI for Vcs- fields
+  * Remove win directory for DFSG-compatible
+  * Bump compat to version 9
+
+ -- Liang Guo <guoliang@debian.org>  Sat, 11 Jun 2016 11:43:28 +0800
+
+tigervnc (1.5.0-1) UNRELEASED; urgency=medium
+
+  [ Yaroslav Halchenko ]
+  * Fresh upstream
+  * debian/patchdir
+    - dropped 0001-xorg-fix-glx-compile.patch (underlying sources are gone)
+    - disabled 0200-add-tcpwrappers-support.patch due to most probably it
+      being incorrect and leading to stalls and segfaults ATM.
+
+   [ Ola Lundqvist ]
+   * Dependency improvements based on vnc4 and tightvnc package knowledge.
+    - Removed unnecessary dependencies.
+    - Changed some dependencies to recommendations.
+    - Changed some dependencies to suggestions.
+    - Package description updates.
+   * Updated standards version to 3.9.6.
+
+ -- Ola Lundqvist <opal@debian.org>  Wed, 27 Jan 2016 20:23:47 +0100
+
+tigervnc (1.4.90-1) UNRELEASED; urgency=medium
+
+  * Fresh upstream version
+  * debian/rules
+    - use xserver117.patch
+  * debian/patchdir
+    - few patches dropped and some updated
+  * debian/control
+    - require fltk >= 1.3.3 (will not build otherwise)
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Fri, 03 Jul 2015 10:28:49 -0400
+
+tigervnc (1.4.3-1) UNRELEASED; urgency=medium
+
+  * Switch to upstream version 1.4.3 of tigervnc
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sun, 24 May 2015 23:25:35 +0200
+
+tigervnc (1.4.1-2) UNRELEASED; urgency=medium
+
+  * Try to be more compatible with tightvncserver and vnc4server regarding
+    registered alternatives
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sun, 24 May 2015 21:57:42 +0200
+
+tigervnc (1.4.1-1) UNRELEASED; urgency=medium
+
+  * Switch to upstream version 1.4.1 of tigervnc
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sat, 03 Jan 2015 06:47:29 +0100
+
+tigervnc (1.3.1-1) UNRELEASED; urgency=medium
+
+  [ Matthias Klose ]
+  * Updated packaging for TigerVNC 1.3.1
+  * debian/control
+    - boost policy compliance to 3.9.5
+    - build-depend on libfltk1.3-dev (with patch to avoid searching
+      for it) and xserver-xorg-dev
+  * debian/rules
+    - use dpkg-buildflags for *FLAGS
+    - include /usr/share/xserver-xorg/configure_flags.mk and use
+      it for xorg configure flags (after some filtering)
+  * debian/patchdir
+    - many patches updated, some removed, and bulk added
+
+  [ Yaroslav Halchenko ]
+  * Second re-upload to Debian proper
+  * debian/gbp.conf
+    - filter out contrib/packages which now carries copies of xorg-server
+    - use pristine-tar
+  * debian/rules
+    - adjust for configure_flags.mk shipped in Debian xorg 2:1.16.0-2
+  * debian/copyright
+    - removed obsolete section on xorg-server and adjusted years for TigerVNC
+      copyright
+  * debian/control
+    - build-depend on versioned libgnutls28-dev due to conflicts (see #731175)
+    - added libepoxy-dev to build-depends
+  * debian/patchdir/xserver116.patch
+    - xserver114.patch updated to be compatible with xserver-xorg 1.16
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Tue, 02 Sep 2014 16:08:45 -0400
+
+tigervnc (1.3.0+X1.15.0-1) UNRELEASED; urgency=low
+
+  * debian/{control,rules}
+    - Use xorg-server-source source package instead of a convenience
+      git submodule of xorg-server
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Tue, 07 Jan 2014 15:11:13 -0500
+
+tigervnc (1.2.0+X1.12.4-1) neurodebian; urgency=low
+
+  [ Joachim Falk ]
+  * Updated xorg-server to 2:1.12.4-5
+  * Support new git wich uses a .git file for submodules instead of .git
+    directory
+  * Switched to using --create-empty-orig instead of empty pristine-tar
+  * debian/README.source
+    - Fixed wrong description of tigervnc_<tigervnc-version>+X<xorg-version>.orig.tar.gz
+
+  [ Yaroslav Halchenko ]
+  * debian/copyright:
+    - Extended to include missing entries
+  * debian/README.source
+    - Listed the reason to ship/use FLTK library
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Mon, 25 Mar 2013 09:14:23 -0400
+
+tigervnc (1.2.0+X1.12.1.902-2) UNRELEASED; urgency=low
+
+  * debian/copyright:
+    - Fixed "Format" field for DEP5
+    - Slight tune ups for MIT/X11 license keywords
+  * debian/gbp.conf
+    - added 'submodules = True' so git-buildpackage works out-of-the-git-tree
+  * debian/control
+    - added myself to uploaders
+
+ -- Yaroslav Halchenko <debian@onerussian.com>  Fri, 01 Mar 2013 10:55:25 -0500
+
+tigervnc (1.2.0+X1.12.1.902-1) UNRELEASED; urgency=low
+
+  [ Joachim Falk ]
+  * Switched to xorg-server used in debian unstable
+  * Updated get-orig-source to get pristine-tar info for xorg-server
+    from pkg-tigervnc git.
+  * Switched debian/xserver.patch to use patch for xorg 110
+  * Updated build dependencies in debian/control to conform to the
+    xorg-server used in debian unstable
+  * Droped patch that got accepted by Xorg upstream:
+    0002-xorg-fix-compilation-with-werror-int-to-pointer-cast.patch
+
+  [ Mike Gabriel ]
+  * Droped patch that got accepted by Xorg upstream:
+    0903-Add-RH-patch-tigervnc11-rh628054-xorg.patch-which-fi.patch
+  * Move README.txt to debian/README.source (cf. Debian policy 4.14).
+  * Bump standards version to 3.9.3.
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Fri, 29 Jun 2012 20:15:27 +0200
+
+tigervnc (1.2.0+X1.7.7-1) UNRELEASED; urgency=low
+
+  [ Joachim Falk ]
+  * Fixup built problem with -Werror=format-security
+  * Changed pkg version to also include xserver upstream version
+  * Switched to 3.0 (quilt) source format
+  * Build autogenerated sources fb.h pixman.h fbrop.h in builddir
+  * Make no backup files for patches to enable clean unapply without
+    .orig files remaining
+  * Moved xorg-autoreconf.sh and xserver.patch symlink into debian dir
+  * Added missing cmake, pristine-tar, libjpeg-dev build dependencies
+  * Removed unneeded fltk build dependency
+  * Improved reverse-patches-deautoreconf target in debian/rules
+  * Added patches for TigerVNC 1.2.0 from archlinux
+    - 0800-archlinux-fixup-gnutls.patch fixes a wrong config check
+    - 0898-archlinux-xorg111.patch enables use of xorg server 1.11
+    - 0899-archlinux-xorg112.patch enables use of xorg server 1.12
+  * Fix spelling error in manpage to shutup lintian
+  * Fix spelling error in xorg server to shutup lintian
+  * Add homepage field to control to shutup lintian
+  * Fix copyright file to shutup lintian
+  * Ported over patch for tcpwrappers support from TigerVNC 1.0.90
+  * Turn on GnuTLS, PAM, and i18n support via gettext
+
+  [ Mike Gabriel ]
+  * Add Mike Gabriel <mike.gabriel@das-netzwerkteam.de> to uploaders.
+  * Add libxft-dev as build-dependency.
+  * Add libxcursor-dev as build-dependency.
+  * Fix lintian issue: maintainer-also-in-uploaders.
+  * Fix lintian issue: missing-build-dependency-for-dh_-command dh_autoreconf
+    => dh-autoreconf.
+  * Fix Vcs-Git: and Vcs-Browser: in /debian/control.
+  * Build-depend on debhelper (>= 8).
+  * Create stampdir before patch Xorg tree.
+  * Add patch: 0002-xorg-fix-compilation-with-werror-int-to-pointer-cast.patch
+  * tigervnc-common: split up dh_install into install, manpages and docs.
+  * Other binary packages: handle manpages by dh_manpages.
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Fri, 06 Jul 2012 23:52:54 +0200
+
+tigervnc (1.2.0-1) UNRELEASED; urgency=low
+
+  * Updated to tigervnc 1.2.0
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Fri, 06 Apr 2012 14:25:22 +0200
+
+tigervnc (1.1.90-1) UNRELEASED; urgency=low
+
+  * Updated to tigervnc 1.1.90
+  * Updated to xorg-server (2:1.7.7-14) squeeze
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Thu, 05 Apr 2012 19:36:26 +0200
+
+tigervnc (1.1.0-2jf) UNRELEASED; urgency=low
+
+  * Added RH patch tigervnc11-ldnow.patch disabling lazy symbol resolution for libvnc.so
+
+  * Added RH patch tigervnc11-rh690245.patch which add TLS encryption to VeNCrypt
+    
+      TigerVNC (Xvnc, x0vncserver, the libvnc.so module, and vncviewer) now
+      supports TLS encryption (using VeNCrypt) which allows TLS encrypted
+      communication between a server and a viewer. (BZ#653491)
+
+  * Added RH patch tigervnc11-rh588342.patch which fixes EQ overflowing bug.
+    
+      Xvnc could become unresponsive and the following error message was shown
+      in the log: "[mi] EQ overflowing. The server is probably stuck in an
+      infinite loop.". This was caused by a large number of user input events
+      in the Xvnc event queue, which were being processed too slowly. With
+      this update, this issue no longer occurs and the system works as
+      expected. (BZ#588342)
+
+  * Add RH patch tigervnc11-rh628054-xorg.patch which fixes vmware keyboard interaction bug.
+    
+      Prior to this update, Xvnc (the X VNC server; part of the tigervnc
+      package) did not pass keyboard input to a remote VMware workstation
+      because it did not take into account types of keyboards which do not
+      have modifier keys. With this update, Xvnc recognizes all types of
+      keyboards; thus, keyboard input is correctly passed to remote VMware
+      workstations. (BZ#628054)
+
+  * Add RH patch tigervnc11-rh645755.patch fix signal interrupted read
+    
+      The Xvnc server randomly refused connections when the reading of the
+      password file (provided when starting Xvnc with the "-PasswordFile"
+      option) was interrupted by a signal. With this update, the loading of a
+      password file continues after an interrupt signal is issued and
+      connections are no longer refused. (BZ#645755)
+
+  * Apply RH patch tigervnc-viewer-reparent.patch which adds vncviewer embedding support via -Parent option.
+
+  * Apply RH patch tigervnc-102434.patch which adds -passwdInput option to vncviewer.
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Thu, 13 Oct 2011 20:12:48 +0200
+
+tigervnc (1.1.0-1jf) UNRELEASED; urgency=low
+
+  * Updated to tigervnc 1.1.0
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Mon, 12 Sep 2011 08:08:35 +0200
+
+tigervnc (1.0.90-3jf) UNRELEASED; urgency=low
+
+  * added tcpwrappers support
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sun, 04 Sep 2011 15:49:07 +0200
+
+tigervnc (1.0.90-2jf) UNRELEASED; urgency=low
+
+  * vncviewer => xvncviewer
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sun, 31 Jul 2011 22:26:46 +0200
+ 
+tigervnc (1.0.90-1jf) UNRELEASED; urgency=low
+
+  * Initial dpk package
+
+ -- Joachim Falk <joachim.falk@gmx.de>  Sun, 31 Jul 2011 21:36:46 +0200
