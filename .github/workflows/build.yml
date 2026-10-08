@@ -423,15 +423,7 @@ jobs:
           app=dist/TigerVNC.app
           mkdir -p $app/Contents/MacOS $app/Contents/Resources
           cp build/vncviewer/vncviewer $app/Contents/MacOS/
-          # the WWS icon (.github/dist/wws-vnc.svg), under the name
-          # Info.plist expects
-          set=wws-vnc.iconset
-          mkdir $set
-          for s in 16 32 128 256 512; do
-            sips -z $s $s .github/dist/wws-vnc-1024.png --out $set/icon_${s}x${s}.png
-            sips -z $((s*2)) $((s*2)) .github/dist/wws-vnc-1024.png --out $set/icon_${s}x${s}@2x.png
-          done
-          iconutil -c icns $set -o $app/Contents/Resources/tigervnc.icns
+          cp media/icons/tigervnc.icns $app/Contents/Resources/
           cp build/release/Info.plist $app/Contents/
           for mo in build/po/*.mo; do
             test -f "$mo" || continue
@@ -441,13 +433,40 @@ jobs:
           done
           dylibbundler -od -b -x $app/Contents/MacOS/vncviewer \
             -d $app/Contents/Frameworks -p @executable_path/../Frameworks/
-          codesign --force --deep --sign - $app
           # nothing may point into Homebrew any more
           if otool -L $app/Contents/MacOS/vncviewer $app/Contents/Frameworks/* |
               grep -E '/opt/homebrew|/usr/local/(opt|Cellar)'; then
             exit 1
           fi
+
+          # "TigerVNC für die WWS": the same viewer, started with
+          # FileDropOpen=Always, with the WWS icon (.github/dist/wws-vnc.svg)
+          # (as the Windows shortcut of the same name)
+          wws="dist/TigerVNC für die WWS.app"
+          cp -R $app "$wws"
+          printf '#!/bin/sh\nexec "$(dirname "$0")/vncviewer" -FileDropOpen=Always "$@"\n' \
+            > "$wws/Contents/MacOS/wws-launcher"
+          chmod 755 "$wws/Contents/MacOS/wws-launcher"
+          plist="$wws/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable wws-launcher" "$plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier de.schlaile.tigervnc-wws" "$plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName TigerVNC für die WWS" "$plist" ||
+            /usr/libexec/PlistBuddy -c "Add :CFBundleName string TigerVNC für die WWS" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string TigerVNC für die WWS" "$plist"
+          set=wws-vnc.iconset
+          mkdir $set
+          for s in 16 32 128 256 512; do
+            sips -z $s $s .github/dist/wws-vnc-1024.png --out $set/icon_${s}x${s}.png
+            sips -z $((s*2)) $((s*2)) .github/dist/wws-vnc-1024.png --out $set/icon_${s}x${s}@2x.png
+          done
+          iconutil -c icns $set -o "$wws/Contents/Resources/tigervnc.icns"
+
+          codesign --force --deep --sign - $app
+          codesign --force --deep --sign - "$wws"
+          codesign --verify --deep "$wws"
+
           cp LICENCE.TXT README.rst dist/
+          ln -s /Applications dist/Programme
           hdiutil create -fs HFS+ -volname TigerVNC-Dateiuebergabe \
             -srcfolder dist TigerVNC-Dateiuebergabe-macOS.dmg
       - uses: actions/upload-artifact@v7
