@@ -382,10 +382,20 @@ jobs:
           fi
           if grep -q "not found" ldd.txt; then exit 1; fi
           (cd dist && zip -qr TigerVNC-Dateiuebergabe-Windows.zip TigerVNC-Dateiuebergabe)
+      - name: Installer
+        run: |
+          cd .github/dist
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" -Q \
+            "-DAppVersion=$GITHUB_REF_NAME" "-DBuild=$GITHUB_RUN_NUMBER" \
+            "-DSourceDir=$(cygpath -w "$GITHUB_WORKSPACE/dist/TigerVNC-Dateiuebergabe")" \
+            tigervnc-dateiuebergabe.iss
+          mv TigerVNC-Dateiuebergabe-Windows-Setup.exe "$GITHUB_WORKSPACE/dist/"
       - uses: actions/upload-artifact@v7
         with:
           name: dist-windows
-          path: dist/TigerVNC-Dateiuebergabe-Windows.zip
+          path: |
+            dist/TigerVNC-Dateiuebergabe-Windows.zip
+            dist/TigerVNC-Dateiuebergabe-Windows-Setup.exe
 
   # macOS: the app with the Homebrew libraries copied into it
   dist-macos:
