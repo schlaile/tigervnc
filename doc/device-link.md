@@ -12,12 +12,13 @@ network, or a program that writes its results into a file. When the
 application runs on a remote desktop and the user sees it through a VNC
 viewer, these devices are on the wrong side.
 
-With this proposal the viewer offers named devices to the session, for
-example `display`, `cardreader` or `payment`. Which local port, address or
-file stands behind a name is configured in the viewer only. An application on
-the remote desktop opens a device by name; the bytes travel inside the RFB
-connection in both directions, together with the settings of a serial line
-(speed, format, flow control, modem lines).
+With this proposal an application on the remote desktop requests devices by
+name through the VNC server, for example `display`, `cardreader` or
+`payment`. The viewer decides which local port, address or file stands behind
+a name, from its configuration or by asking the user. The bytes travel inside
+the RFB connection in both directions, together with the settings of a serial
+line (speed, format, flow control, modem lines). A serial device appears on
+the desktop as a terminal device, so programs use it like a local port.
 
 Nothing listens on the viewer's machine, and the remote desktop never learns
 or chooses a local path.
@@ -59,20 +60,21 @@ never holds back framebuffer updates or input.
 ```
  viewer machine                         VNC server              desktop session
  --------------                         ----------              ---------------
- COM3 (customer display)  <--+
- 192.168.1.50:20007 (ZVT) <--+-- RFB --  Xvnc  -- unix sockets -- application
- C:\CTS\sales.log (tail)  <--+                    $XDG_RUNTIME_DIR/
-                                                  vnc-device-link/:N/NAME
+ COM3 (customer display)  <--+                     /dev/pts/N (serial)
+ 192.168.1.50:20007 (ZVT) <--+-- RFB --  Xvnc  --   unix sockets (tcp, tail) -- application
+ C:\CTS\sales.log (tail)  <--+                     control socket
 ```
 
 1. The viewer declares support in `SetEncodings`; the server confirms.
-2. The viewer offers its configured devices: name and kind, nothing else.
-3. Xvnc creates one Unix socket per offered device for the desktop.
-4. An application connects to a socket; Xvnc asks the viewer to open the
-   device. The viewer may ask the user, then opens the local port, connects to
-   the configured address or opens the file.
+2. An application asks Xvnc on its control socket for a device: name, kind
+   and a label for the user.
+3. Xvnc forwards the request to the viewer. The viewer looks up the name in
+   its configuration or asks the user which local device to use, then opens
+   the local port, connects to the configured address or opens the file.
+4. Xvnc gives the application a terminal device (`serial`) or a Unix socket
+   (`tcp`, `tail`).
 5. Bytes, settings and line states travel as `DeviceLink` messages until
-   either side closes.
+   the application releases the device or the viewer loses it.
 
 ## Device kinds
 
@@ -99,8 +101,7 @@ that encoding (all coordinates 0) carrying:
 | 1 | U8 | flags, 0 |
 | 2 | U16 | maximum number of open channels the server accepts |
 
-Only after this rectangle may either side send `DeviceLink` messages. A
-client that never receives it does not offer devices.
+Only after this rectangle may either side send `DeviceLink` messages.
 
 Until numbers are assigned the implementation uses the private pseudo-encoding
 `0x44564C31` ("DVL1") and the message type 200 in both directions.
@@ -124,23 +125,22 @@ bytes, other payloads at most 1024.
 
 | Subtype | Direction | Name | Payload |
 |---|---|---|---|
-| 1 | C→S | `Offer` | list of devices, see below; replaces earlier offers |
-| 2 | S→C | `Open` | U8 name-length, name |
-| 3 | C→S | `OpenResult` | U8 status, U16 message-length, message (UTF-8) |
-| 4 | both | `Data` | bytes |
-| 5 | both | `Credit` | U32 additional bytes the sender may send on *channel* |
-| 6 | S→C | `SetParams` | U32 speed, U8 data bits, U8 parity, U8 stop bits, U8 flow |
-| 7 | S→C | `SetLines` | U8 mask, U8 values, U16 break duration in ms |
-| 8 | C→S | `LineState` | U8 lines, U8 errors |
-| 9 | S→C | `Purge` | U8 which (1 receive, 2 transmit, 3 both) |
-| 10 | both | `Close` | U8 reason |
+| 1 | S→C | `Request` | U8 kind, U8 name-length, name, U8 label-length, label (UTF-8) |
+| 2 | C→S | `RequestResult` | U8 status, U16 message-length, message (UTF-8) |
+| 3 | both | `Data` | bytes |
+| 4 | both | `Credit` | U32 additional bytes the sender may send on *channel* |
+| 5 | S→C | `SetParams` | U32 speed, U8 data bits, U8 parity, U8 stop bits, U8 flow |
+| 6 | S→C | `SetLines` | U8 mask, U8 values, U16 break duration in ms |
+| 7 | C→S | `LineState` | U8 lines, U8 errors |
+| 8 | S→C | `Purge` | U8 which (1 receive, 2 transmit, 3 both) |
+| 9 | both | `Close` | U8 reason |
 
-`Offer` payload: U8 count, then per device U8 kind (1 `serial`, 2 `tcp`, 3
-`tail`), U8 name-length, name. Names are 1 to 32 characters of `[a-z0-9_-]`.
-An empty offer withdraws all devices.
+Kind: 1 `serial`, 2 `tcp`, 3 `tail`. Names are 1 to 32 characters of
+`[a-z0-9_-]`; the label is shown to the user ("Customer display").
 
-`OpenResult` status: 0 open, 1 refused by the user, 2 not available (port
-missing, connection refused, file not found), 3 busy, 4 not offered.
+`RequestResult` status: 0 open, 1 refused by the user, 2 not available (port
+missing, connection refused, file not found), 3 busy, 4 not configured and no
+user to ask.
 
 Parity: 0 none, 1 odd, 2 even, 3 mark, 4 space. Stop bits: 1, 2, or 3 for
 1.5. Flow: 0 none, 1 RTS/CTS, 2 XON/XOFF. Lines (`SetLines` mask and values):
@@ -152,41 +152,84 @@ DCD; errors: bit 0 framing, bit 1 parity, bit 2 overrun, bit 3 break received.
 
 ### Channels and flow control
 
-The server picks a free channel number for `Open`; the channel stays in use
-until both sides have sent `Close`. Each side starts with a window of 65536
+The server picks a free channel number for `Request`; the channel stays in
+use until both sides have sent `Close`. The viewer sends `Close` when it loses
+the device (adapter unplugged, connection dropped); the server sends it when
+the application releases the device. Each side starts with a window of 65536
 bytes per channel for `Data` it may send and must not exceed it; the receiver
 returns `Credit` as it delivers bytes to the device or the application.
 
 ## The VNC server
 
-Xvnc creates `$XDG_RUNTIME_DIR/vnc-device-link/:N/` (mode 0700, N the
-display) and, for each offered device, a Unix stream socket `NAME` (mode
-0600). It removes sockets of withdrawn devices and all of them when the
-owning viewer disconnects.
+### Control socket
+
+Xvnc listens on `$XDG_RUNTIME_DIR/vnc-device-link/:N/control` (directory mode
+0700, N the display). An application connects and sends UTF-8 lines:
+
+```
+request display serial Customer display
+```
+
+Xvnc sends `Request` to the owning viewer and answers when the
+`RequestResult` arrives:
+
+```
+ok display /run/user/1000/vnc-device-link/:1/display
+error display refused
+```
+
+The path is a symbolic link to the terminal device (`serial`) or a Unix
+socket (`tcp`, `tail`). It stays valid while the control connection is open;
+closing the connection, or `release NAME`, releases the device. Xvnc reports
+later changes on the same connection: `lost NAME` when the viewer closes the
+channel, for example because the adapter was unplugged or the viewer
+disconnected. An application that keeps the control connection open can thus
+request its devices once at start and request them again after `lost`.
+
+A WWS-style application therefore needs one line per device at start and
+then opens a path, as it would open `/dev/ttyS0` or connect to a socket.
+
+### Serial devices as terminals
+
+For `serial`, Xvnc allocates a pseudo terminal and keeps the master side.
+The application opens the slave, sets speed and flow control with
+`tcsetattr`, and reads and writes as on a real port. Xvnc puts the master in
+packet mode (`TIOCPKT`) and sets `EXTPROC` on the terminal, so that the kernel
+reports every `tcsetattr` of the application (`TIOCPKT_IOCTL`); Xvnc then reads
+the settings and sends `SetParams`.
+
+A pseudo terminal is not a full serial port. Tested on Linux 6.1:
+
+| Setting | Reported to Xvnc |
+|---|---|
+| speed (`cfsetospeed`) | yes |
+| RTS/CTS flow control (`CRTSCTS`) | yes |
+| data bits, parity (`CSIZE`, `PARENB`) | no, the pty driver forces 8 bits, no parity |
+| modem lines (`TIOCMGET`, `TIOCMSET`) | no, `ENOTTY` |
+| break (`tcsendbreak`) | no, succeeds silently |
+
+These go through the control connection instead:
+
+```
+format display 7E1
+lines display dtr=1 rts=0
+break display 250
+purge display both
+```
+
+Xvnc answers each with `ok` or `error TEXT` and reports changes of the input
+lines: `lines display cts=1 dsr=1 ri=0 dcd=0`, `error display framing`.
+
+Often neither is needed: the viewer configuration can carry the whole
+initialisation of a device (see [Viewer behaviour](#viewer-behaviour)), and
+the application then only reads and writes the terminal.
+
+### Owner
 
 Several viewers may share a session. The devices belong to one viewer, the
-*owner*: the most recent viewer that is not view-only and sent a non-empty
-`Offer`. Offers of other viewers are ignored while the owner is connected.
-
-An application connects to `NAME`; Xvnc sends `Open` and keeps the connection
-until `OpenResult` arrives, closing it if the status is not 0. Bytes on the
-socket become `Data` and back.
-
-For serial settings an application connects to `NAME.ctl` next to it, a
-line-based UTF-8 protocol for the device opened on `NAME`:
-
-```
-speed 9600
-format 8N1
-flow none
-lines dtr=1 rts=1
-break 250
-purge both
-```
-
-Xvnc answers each command with `ok` or `error TEXT` and writes events when
-they change: `lines cts=1 dsr=1 ri=0 dcd=0`, `error framing`. Applications
-that only send bytes at the device's defaults never need the control socket.
+*owner*: the first viewer that is not view-only and supports this extension.
+When it disconnects, all channels close (`lost`), and the next qualifying
+viewer becomes the owner; applications request their devices again.
 
 ## Viewer behaviour
 
@@ -194,16 +237,28 @@ that only send bytes at the device's defaults never need the control socket.
   `DeviceLinks`:
 
   ```
-  display=serial:COM3
-  cardreader=serial:/dev/ttyUSB0
+  display=serial:COM3,9600,8N1
+  cardreader=serial:/dev/ttyUSB0,dtr=1,rts=1
   payment=tcp:192.168.1.50:20007
   cts=tail:C:\CTS\sales.log
   ```
 
-  and in the options dialog. The viewer offers exactly these names.
-- The first `Open` of a name on a server asks the user (Allow once, Always,
-  Never; Never is the default button). Parameter `DeviceLinkOpen` (Ask, Once,
-  Always, Never) as for File Drop.
+  and in the options dialog.
+- A `serial` entry may carry the initialisation of the device: speed, format
+  (`8N1`, `7E1`, ...), flow control (`rtscts`, `xonxoff`) and the initial
+  modem lines (`dtr=1`, `rts=0`). The viewer applies it when it opens the
+  port, before the first byte. The application may still change settings
+  with `tcsetattr` or the control socket; with the option `fixed` the viewer
+  ignores `SetParams` and `SetLines` and keeps its configuration. This places
+  the knowledge of the hardware where the hardware is, and covers the settings
+  a pseudo terminal cannot carry.
+- A request for a name that is not configured asks the user: "The remote
+  desktop wants to use *Customer display* (serial). Use: [COM3 ▾] Remember /
+  Once / Refuse". The list of local ports is shown to the user only, never sent
+  to the server.
+- A request for a configured name asks the user the first time per server
+  (Allow once, Always, Never). Parameter `DeviceLinkOpen` (Ask, Once, Always,
+  Never) as for File Drop.
 - `tail` starts at the end of the file unless the name is configured with
   `tail-from-start:`. A file that is replaced (rotated) is followed by name.
 - On Windows, serial ports are opened with `CreateFile("\\.\COMn")` and
@@ -212,10 +267,11 @@ that only send bytes at the device's defaults never need the control socket.
 
 ## Security
 
-- **Only configured devices.** The server sees names and kinds, never local
-  paths, and cannot enumerate ports. A `tcp` name reaches its one configured
+- **Names only.** The server sees names, kinds and the user's answer, never
+  local paths, and cannot enumerate ports. A `tcp` name reaches its one configured
   address, never an address chosen by the desktop.
-- **Consent.** Opening a device is the user's decision, as with File Drop.
+- **Consent.** Which local device answers a name is the user's decision, as
+  is dropping a file with File Drop.
 - **One owner.** A second, view-only or later viewer of a shared session
   cannot read the owner's card reader.
 - **Encryption.** Card readers and payment terminals carry sensitive data. A
@@ -240,10 +296,8 @@ protocol community specification once the design is agreed.
 
 ## Open questions
 
-- One message type with subtypes, or separate message types per direction?
-- Should the server announce which names it expects, so that a viewer can
-  warn about missing configuration?
-- Is a Unix socket plus control socket the right interface for the desktop,
-  or should Xvnc also provide a pseudo terminal per serial device for
-  programs that insist on a TTY (without speed changes, which a pseudo
-  terminal does not report)?
+- Other platforms for Xvnc: the BSDs know `EXTPROC` and `TIOCPKT_IOCTL` too,
+  but this is untested.
+- A CUSE character device would give full serial semantics (format, modem
+  lines, break) to unmodified programs, but needs `/dev/cuse` access, which a
+  user's Xvnc normally does not have.
