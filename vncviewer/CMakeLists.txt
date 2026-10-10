@@ -18,6 +18,7 @@ add_executable(vncviewer
   DeviceLink.cxx
   DeviceLinkPort.cxx
   DeviceLinkProfile.cxx
+  DeviceLinkOptions.cxx
   EmulateMB.cxx
   ServerDialog.cxx
   ShortcutHandler.cxx

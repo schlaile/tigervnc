@@ -266,6 +266,10 @@ viewer becomes the owner; applications request their devices again.
   labels       serial  COM5   115200 8N1
   ```
 
+- The options dialog has a page "Devices" to choose the profile of the
+  connection and to edit the profiles and their devices, with a list of the
+  local serial ports. Profiles that were not changed there are written back
+  as they were, comments included.
 - A connection uses the profile named by the viewer parameter
   `DeviceLinkProfile`, which is saved with the connection like the other
   parameters. Without a profile, or if the profile's `server` patterns do not

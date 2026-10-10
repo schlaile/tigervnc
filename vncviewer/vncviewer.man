@@ -220,7 +220,8 @@ device: its name, then \fBserial\fP \fIPORT\fP [\fISPEED\fP] [\fIFORMAT\fP]
 [\fBfrom-start\fP]. A serial port is opened with the given settings; the
 remote desktop may change them unless \fBfixed\fP is given. For a name that
 is not in the profile, the viewer asks the user which device to use and can
-add the choice to the profile.
+add the choice to the profile. The profiles can also be edited on the
+\fBDevices\fP page of the options dialog.
 .
 .TP
 .B \-DotWhenNoCursor (DEPRECATED)

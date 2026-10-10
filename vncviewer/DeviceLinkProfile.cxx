@@ -25,6 +25,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
+
 #include <FL/fl_utf8.h>
 
 #include <core/LogWriter.h>
@@ -38,7 +40,7 @@
 static core::LogWriter vlog("DeviceLink");
 
 DeviceLinkProfile::DeviceLinkProfile()
-  : ask(AskOnce), insecure(false)
+  : ask(AskOnce), insecure(false), modified(false)
 {
 }
 
@@ -115,6 +117,21 @@ std::vector<std::string> DeviceLinkProfile::split(const std::string& line)
   return words;
 }
 
+std::string DeviceLinkProfile::comment(const std::string& line)
+{
+  bool quoted = false;
+
+  for (size_t i = 0; i < line.size(); i++) {
+    if (line[i] == '"')
+      quoted = !quoted;
+    else if (line[i] == '#' && !quoted) {
+      size_t start = line.find_first_not_of(" \t", i + 1);
+      return start == std::string::npos ? "" : line.substr(start);
+    }
+  }
+  return "";
+}
+
 std::string DeviceLinkProfile::quote(const std::string& word)
 {
   if (!word.empty() &&
@@ -156,7 +173,8 @@ static bool readLines(const std::string& path, std::vector<std::string>* lines,
 }
 
 bool DeviceLinkProfile::loadAll(std::vector<DeviceLinkProfile>* profiles,
-                                std::string* error)
+                                std::string* error,
+                                std::vector<std::string>* header)
 {
   std::string file(path());
   std::vector<std::string> lines;
@@ -169,6 +187,13 @@ bool DeviceLinkProfile::loadAll(std::vector<DeviceLinkProfile>* profiles,
     std::string line(lines[n]);
     size_t start = line.find_first_not_of(" \t");
 
+    if (profile != nullptr && !(start != std::string::npos &&
+                                line[start] == '['))
+      profile->lines.push_back(line);
+    else if (header != nullptr && profile == nullptr &&
+             !(start != std::string::npos && line[start] == '['))
+      header->push_back(line);
+
     if (start != std::string::npos && line[start] == '[') {
       size_t end = line.find(']', start);
       if (end == std::string::npos) {
@@ -179,6 +204,7 @@ bool DeviceLinkProfile::loadAll(std::vector<DeviceLinkProfile>* profiles,
       profiles->push_back(DeviceLinkProfile());
       profile = &profiles->back();
       profile->name = line.substr(start + 1, end - start - 1);
+      profile->lines.push_back(line);
       continue;
     }
 
@@ -224,6 +250,7 @@ bool DeviceLinkProfile::loadAll(std::vector<DeviceLinkProfile>* profiles,
       if (!profile->devices.count(key))
         profile->order.push_back(key);
       profile->devices[key] = target;
+      profile->comments[key] = comment(line);
     }
   }
 
@@ -263,11 +290,7 @@ bool DeviceLinkProfile::addDevice(const std::string& profile,
   }
   readLines(file, &lines, &ignored);
 
-  std::string line(name);
-  line.resize(std::max<size_t>(line.size() + 1, 13), ' ');
-  for (const std::string& word : target.toWords())
-    line += quote(word) + " ";
-  line.pop_back();
+  std::string line(deviceLine(name, target, ""));
 
   // After the last line of the profile that is not empty
   size_t insert = lines.size();
@@ -290,6 +313,93 @@ bool DeviceLinkProfile::addDevice(const std::string& profile,
     insert = lines.size();
   }
   lines.insert(lines.begin() + insert, line);
+
+  FILE* f = fl_fopen(file.c_str(), "w");
+  if (f == nullptr) {
+    *error = core::format(_("Could not write \"%s\": %s"), file.c_str(),
+                          strerror(errno));
+    return false;
+  }
+  for (const std::string& l : lines)
+    fprintf(f, "%s\n", l.c_str());
+  if (fclose(f) != 0) {
+    *error = core::format(_("Could not write \"%s\": %s"), file.c_str(),
+                          strerror(errno));
+    return false;
+  }
+  return true;
+}
+
+std::string DeviceLinkProfile::deviceLine(const std::string& name,
+                                          const DeviceLinkTarget& target,
+                                          const std::string& comment)
+{
+  std::vector<std::string> words(target.toWords());
+  std::string line(name);
+
+  // name, kind and device in columns, like the example
+  line.resize(std::max<size_t>(line.size() + 1, 13), ' ');
+  line += words[0];
+  line.resize(std::max<size_t>(line.size() + 1, 21), ' ');
+  line += quote(words[1]);
+  for (size_t i = 2; i < words.size(); i++)
+    line += (i == 2 ? "   " : " ") + quote(words[i]);
+  if (!comment.empty())
+    line += "   # " + comment;
+  return line;
+}
+
+std::vector<std::string> DeviceLinkProfile::format() const
+{
+  std::vector<std::string> out;
+
+  out.push_back("[" + name + "]");
+  if (!description.empty())
+    out.push_back("description  " + description);
+  if (!servers.empty()) {
+    std::string line("server      ");
+    for (const std::string& s : servers)
+      line += " " + quote(s);
+    out.push_back(line);
+  }
+  out.push_back(std::string("ask          ") +
+                (ask == AskAlways ? "always" :
+                 ask == AskOnce ? "once" : "never"));
+  if (insecure)
+    out.push_back("insecure     yes");
+  for (const std::string& device : order) {
+    auto it = devices.find(device);
+    if (it == devices.end())
+      continue;
+    auto c = comments.find(device);
+    out.push_back(deviceLine(device, it->second,
+                             c == comments.end() ? "" : c->second));
+  }
+  return out;
+}
+
+bool DeviceLinkProfile::saveAll(const std::vector<DeviceLinkProfile>& profiles,
+                                const std::vector<std::string>& header,
+                                std::string* error)
+{
+  std::string file(path());
+  std::vector<std::string> lines(header);
+
+  if (file.empty()) {
+    *error = _("Could not determine VNC config directory path");
+    return false;
+  }
+
+  for (const DeviceLinkProfile& profile : profiles) {
+    if (!lines.empty() && !lines.back().empty())
+      lines.push_back("");
+    if (profile.modified || profile.lines.empty()) {
+      std::vector<std::string> formatted(profile.format());
+      lines.insert(lines.end(), formatted.begin(), formatted.end());
+    } else {
+      lines.insert(lines.end(), profile.lines.begin(), profile.lines.end());
+    }
+  }
 
   FILE* f = fl_fopen(file.c_str(), "w");
   if (f == nullptr) {
