@@ -68,6 +68,10 @@ extern core::BoolParameter shared;
 extern core::BoolParameter playAudio;
 #endif
 
+extern core::StringParameter deviceLinks;
+extern core::EnumParameter deviceLinkOpen;
+extern core::BoolParameter deviceLinkInsecure;
+
 extern core::BoolParameter acceptClipboard;
 extern core::BoolParameter setPrimary;
 extern core::BoolParameter sendClipboard;

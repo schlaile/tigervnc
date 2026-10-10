@@ -725,6 +725,11 @@ void DesktopWindow::addOverlayError(const char* text, ...)
   addOverlay(textbuf);
 }
 
+void DesktopWindow::showMessage(const char* text)
+{
+  addOverlay(text);
+}
+
 void DesktopWindow::addOverlay(const char *text)
 {
   const Fl_Fontsize fontsize = 16;

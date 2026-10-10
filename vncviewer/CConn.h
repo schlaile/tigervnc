@@ -30,6 +30,7 @@ namespace network { class Socket; }
 
 class AudioOutput;
 class DesktopWindow;
+class DeviceLink;
 
 class CConn : public rfb::CConnection
 {
@@ -44,6 +45,13 @@ public:
   unsigned getUpdateCount();
   unsigned getPixelCount();
   unsigned getPosition();
+
+  // Device links (doc/device-link.md)
+  const char* getServerName() { return serverName.c_str(); }
+  bool isSecure();
+  void sendDeviceLink(uint8_t subtype, uint16_t channel,
+                      const uint8_t* data, size_t len);
+  void deviceLinkMessage(const char* text);
 
 protected:
 
@@ -69,6 +77,8 @@ protected:
                               const rfb::ScreenSet& layout) override;
 
   void setName(const char* name) override;
+  void handleDeviceLink(uint8_t subtype, uint16_t channel,
+                        const uint8_t* data, size_t len) override;
 
   void bell() override;
 
@@ -104,6 +114,7 @@ private:
   static void handleUpdateTimeout(void *data);
 
 private:
+  std::string serverName;
   std::string serverHost;
   int serverPort;
   network::Socket* sock;
@@ -112,6 +123,8 @@ private:
   DesktopWindow *desktop;
 
   AudioOutput *audioOutput;
+
+  DeviceLink *deviceLink;
 
   unsigned updateCount;
   unsigned pixelCount;

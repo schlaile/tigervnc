@@ -54,6 +54,7 @@ namespace rfb {
     bool readServerCutText();
     bool readExtendedClipboard(int32_t len);
     bool readFence();
+    bool readDeviceLink();
     bool readEndOfContinuousUpdates();
 
     bool readFramebufferUpdate();

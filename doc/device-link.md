@@ -246,37 +246,44 @@ viewer becomes the owner; applications request their devices again.
 
 ## Viewer behaviour
 
-- Devices are configured per server, for example as viewer parameter
-  `DeviceLinks`:
+- Devices are configured with the viewer parameter `DeviceLinks`, entries
+  separated by semicolons:
 
   ```
-  display=serial:COM3,9600,8N1
-  cardreader=serial:/dev/ttyUSB0,dtr=1,rts=1
-  payment=tcp:192.168.1.50:20007
-  cts=tail:C:\CTS\sales.log
+  display=serial:COM3,9600,8N1;cardreader=serial:/dev/ttyUSB0,dtr=1,rts=1;
+  payment=tcp:192.168.1.50:20007;cts=tail:C:\CTS\sales.log
   ```
 
-  and in the options dialog.
 - A `serial` entry may carry the initialisation of the device: speed, format
-  (`8N1`, `7E1`, ...), flow control (`rtscts`, `xonxoff`) and the initial
-  modem lines (`dtr=1`, `rts=0`). The viewer applies it when it opens the
-  port, before the first byte. The application may still change settings
+  (`8N1`, `7E1`, ...), flow control (`rtscts`, `xonxoff`, `noflow`) and the
+  initial modem lines (`dtr=1`, `rts=0`). The viewer applies it when it opens
+  the port, before the first byte. The application may still change settings
   with `tcsetattr` or the control socket; with the option `fixed` the viewer
   ignores `SetParams` and `SetLines` and keeps its configuration. This places
   the knowledge of the hardware where the hardware is, and covers the settings
   a pseudo terminal cannot carry.
 - A request for a name that is not configured asks the user: "The remote
-  desktop wants to use *Customer display* (serial). Use: [COM3 ▾] Remember /
-  Once / Refuse". The list of local ports is shown to the user only, never sent
-  to the server.
-- A request for a configured name asks the user the first time per server
-  (Allow once, Always, Never). Parameter `DeviceLinkOpen` (Ask, Once, Always,
-  Never) as for File Drop.
+  desktop wants to use *Customer display* (serial port, "display"), which is
+  not set up on this computer. Which one should it use?" with a list of the
+  local serial ports (an address or a file for the other kinds), "Remember
+  this choice", Use and Refuse. The list of local ports is shown to the user
+  only, never sent to the server. A remembered choice is added to
+  `DeviceLinks` and saved.
+- A request for a configured name is confirmed by the user according to
+  `DeviceLinkOpen`: `Ask` every time, `Once` per name and viewer run (the
+  default), `Always` without asking, `Never` refuses everything. The dialogs
+  have no default button, so that a Return typed into the session does not
+  answer them, and they close when the server withdraws the request.
+- Devices are offered only over an encrypted connection, unless
+  `DeviceLinkInsecure` is set (for example inside a VPN).
 - `tail` starts at the end of the file unless the name is configured with
-  `tail-from-start:`. A file that is replaced (rotated) is followed by name.
+  `tail-from-start:`. A file that is replaced or cut short (rotated) is read
+  from its beginning; the file may also appear only later.
 - On Windows, serial ports are opened with `CreateFile("\\.\COMn")` and
-  configured with `SetCommState`/`EscapeCommFunction`; on Linux and macOS with
-  `termios`. The viewer translates `SetParams`, `SetLines` and line states.
+  overlapped I/O, configured with `SetCommState` and `EscapeCommFunction`; on
+  Linux and macOS with `termios`, in exclusive mode. Each open device has a
+  reading and a writing thread, so that a slow port never holds up the
+  session.
 
 ## Security
 
@@ -296,11 +303,13 @@ viewer becomes the owner; applications request their devices again.
 
 ## Reference implementations
 
-To be written in the TigerVNC fork <https://github.com/schlaile/tigervnc>
-(branch `device-link`): Xvnc (sockets, owner, framing) and vncviewer
-(configuration, consent, serial ports on Windows, Linux and macOS, `tcp`,
-`tail`). The first desktop application is a point-of-sale system that opens
-its customer display, card reader and payment terminal by name.
+In the TigerVNC fork <https://github.com/schlaile/tigervnc>, branch
+`device-link`: Xvnc (`unix/common/DeviceLinkHost.cxx`) and vncviewer
+(`vncviewer/DeviceLink.cxx`, `vncviewer/DeviceLinkPort.cxx`).
+`tests/device-link/` has a protocol test of Xvnc and an end-to-end test of
+both with a pseudo terminal as serial port, a TCP server and a growing file.
+The first desktop application is a point-of-sale system that opens its
+customer display, card reader and payment terminal by name.
 
 ## Registration
 
