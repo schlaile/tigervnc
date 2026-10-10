@@ -39,6 +39,7 @@
 #endif
 
 #include "OptionsDialog.h"
+#include "DeviceLinkOptions.h"
 #include "ShortcutHandler.h"
 #include "parameters.h"
 
@@ -98,6 +99,7 @@ OptionsDialog::OptionsDialog()
     createShortcutsPage(tx, ty, tw, th);
     createDisplayPage(tx, ty, tw, th);
     createMiscPage(tx, ty, tw, th);
+    createDevicesPage(tx, ty, tw, th);
   }
 
   navigation->end();
@@ -170,6 +172,9 @@ void OptionsDialog::show(void)
 
 void OptionsDialog::loadOptions(void)
 {
+  /* Devices */
+  deviceLinkOptions->load();
+
   /* Compression */
   autoselectCheckbox->value(autoSelect);
   jpegCheckbox->value(!rfb::CConnection::noJpeg);
@@ -376,6 +381,9 @@ void OptionsDialog::loadOptions(void)
 
 void OptionsDialog::storeOptions(void)
 {
+  /* Devices */
+  deviceLinkOptions->store();
+
   /* Compression */
   autoSelect.setParam(autoselectCheckbox->value());
   rfb::CConnection::noJpeg.setParam(!jpegCheckbox->value());
@@ -1266,6 +1274,12 @@ void OptionsDialog::createMiscPage(int tx, int ty, int tw, int th)
 #endif
 
   group->end();
+}
+
+
+void OptionsDialog::createDevicesPage(int tx, int ty, int tw, int th)
+{
+  deviceLinkOptions = new DeviceLinkOptions(tx, ty, tw, th);
 }
 
 

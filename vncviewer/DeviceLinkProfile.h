@@ -57,6 +57,16 @@ struct DeviceLinkProfile {
   std::map<std::string, DeviceLinkTarget> devices;
   // Device names in the order of the file
   std::vector<std::string> order;
+  // Comments at the end of device lines
+  std::map<std::string, std::string> comments;
+
+  // The lines of the file, from [name] to the next profile; written back
+  // as they are unless the profile was modified
+  std::vector<std::string> lines;
+  bool modified;
+
+  // The lines of a modified profile
+  std::vector<std::string> format() const;
 
   bool matchesServer(const std::string& server) const;
 
@@ -66,7 +76,16 @@ struct DeviceLinkProfile {
   // All profiles of the file; problems in single lines are logged and
   // the lines skipped. False only if the file cannot be read.
   static bool loadAll(std::vector<DeviceLinkProfile>* profiles,
+                      std::string* error,
+                      std::vector<std::string>* header=nullptr);
+  // Writes the file; header is what came before the first profile
+  static bool saveAll(const std::vector<DeviceLinkProfile>& profiles,
+                      const std::vector<std::string>& header,
                       std::string* error);
+  // A device line, aligned like the example above
+  static std::string deviceLine(const std::string& name,
+                                const DeviceLinkTarget& target,
+                                const std::string& comment);
   // The profile called name
   static bool load(const std::string& name, DeviceLinkProfile* profile,
                    std::string* error);
@@ -78,6 +97,8 @@ struct DeviceLinkProfile {
 
   // Words of a line, without the comment
   static std::vector<std::string> split(const std::string& line);
+  // The comment of a line, without #
+  static std::string comment(const std::string& line);
   static std::string quote(const std::string& word);
 };
 

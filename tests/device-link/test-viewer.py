@@ -319,7 +319,7 @@ def run(app, devfd, tail, devdir, env, profiles):
     check(reply.startswith("ok scanner "), "chosen port opened: " + reply)
     text = open(profiles).read()
     kasse = text.split("[anderswo]")[0]
-    check("scanner      serial %s" % scanport in kasse,
+    check("scanner      serial  %s" % scanport in kasse,
           "choice remembered in the profile")
     os.close(scanfd)
     app2.cmd("release scanner")
