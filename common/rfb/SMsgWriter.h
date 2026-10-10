@@ -69,6 +69,10 @@ namespace rfb {
     // writeFence() sends a new fence request or response to the client.
     void writeFence(uint32_t flags, unsigned len, const uint8_t data[]);
 
+    // writeDeviceLink() sends a DeviceLink message to the client
+    void writeDeviceLink(uint8_t subtype, uint16_t channel,
+                         const uint8_t* data, size_t len);
+
     // writeEndOfContinuousUpdates() indicates that we have left continuous
     // updates mode.
     void writeEndOfContinuousUpdates();

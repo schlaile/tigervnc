@@ -103,6 +103,9 @@ namespace rfb {
                    const uint8_t* data) override;
     void setCursorPos(const core::Point& p, bool warped) override;
     void setName(const char* name_) override;
+    void enableDeviceLink(unsigned maxChannels) override;
+    bool sendDeviceLink(uint8_t subtype, uint16_t channel,
+                        const uint8_t* data, size_t len) override;
     void setLEDState(unsigned state) override;
 
     void bell() override;
@@ -126,6 +129,11 @@ namespace rfb {
     void handleClipboardRequest(VNCSConnectionST* client);
     void handleClipboardAnnounce(VNCSConnectionST* client, bool available);
     void handleClipboardData(VNCSConnectionST* client, const char* data);
+
+    void deviceLinkClientReady(VNCSConnectionST* client);
+    void handleDeviceLink(VNCSConnectionST* client, uint8_t subtype,
+                          uint16_t channel, const uint8_t* data,
+                          size_t len);
 
     unsigned int setDesktopSize(VNCSConnectionST* requester,
                                 int fb_width, int fb_height,
@@ -195,6 +203,9 @@ namespace rfb {
     VNCSConnectionST* pointerClient;
     VNCSConnectionST* clipboardClient;
     std::list<VNCSConnectionST*> clipboardRequestors;
+
+    unsigned deviceLinkChannels;
+    VNCSConnectionST* deviceLinkOwner;
 
     time_t pointerClientTime;
 

@@ -163,6 +163,9 @@ namespace rfb {
     void handleClipboardProvide(uint32_t flags, const size_t* lengths,
                                 const uint8_t* const* data) override;
 
+    void handleDeviceLink(uint8_t subtype, uint16_t channel,
+                          const uint8_t* data, size_t len) override;
+
     // Methods to be overridden in a derived class
 
     // supportsLocalCursor() is called whenever the status of
@@ -187,6 +190,11 @@ namespace rfb {
     // should be sent back to the client to inform it of the current
     // server state.
     virtual void supportsLEDState();
+
+    // supportsDeviceLink() is called the first time we detect that the
+    // client supports device links. A Hello message should be sent at
+    // this point if the server offers them.
+    virtual void supportsDeviceLink();
 
     // authSuccess() is called when authentication has succeeded.
     virtual void authSuccess();

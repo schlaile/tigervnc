@@ -36,6 +36,7 @@
 #include <rfb/msgTypes.h>
 #include <rfb/qemuTypes.h>
 #include <rfb/clipboardTypes.h>
+#include <rfb/DeviceLink.h>
 #include <rfb/Exception.h>
 #include <rfb/PixelFormat.h>
 #include <rfb/ScreenSet.h>
@@ -111,6 +112,9 @@ bool SMsgReader::readMsg()
     break;
   case msgTypeQEMUClientMessage:
     ret = readQEMUMessage();
+    break;
+  case msgTypeDeviceLink:
+    ret = readDeviceLink();
     break;
   default:
     vlog.error(_("Unknown message type %d"), currentMsgType);
@@ -262,6 +266,37 @@ bool SMsgReader::readFence()
   is->readBytes(data, len);
   
   handler->fence(flags, len, data);
+
+  return true;
+}
+
+bool SMsgReader::readDeviceLink()
+{
+  uint8_t subtype;
+  uint16_t channel;
+  uint32_t len;
+
+  if (!is->hasData(1 + 2 + 4))
+    return false;
+
+  is->setRestorePoint();
+
+  subtype = is->readU8();
+  channel = is->readU16();
+  len = is->readU32();
+
+  if (len > deviceLinkMaxData)
+    throw protocol_error(_("Too large device link message"));
+
+  if (!is->hasDataOrRestore(len))
+    return false;
+  is->clearRestorePoint();
+
+  std::vector<uint8_t> data(len);
+  if (len > 0)
+    is->readBytes(data.data(), len);
+
+  handler->handleDeviceLink(subtype, channel, data.data(), len);
 
   return true;
 }

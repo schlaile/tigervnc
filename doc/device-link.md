@@ -92,16 +92,10 @@ cannot pick another. `tail` is read-only.
 ### Client support and confirmation
 
 The client includes `pseudoEncodingDeviceLink` in `SetEncodings`. A server
-that implements this proposal answers with a `FramebufferUpdate` rectangle of
-that encoding (all coordinates 0) carrying:
-
-| Bytes | Type | Description |
-|---|---|---|
-| 1 | U8 | version, 1 |
-| 1 | U8 | flags, 0 |
-| 2 | U16 | maximum number of open channels the server accepts |
-
-Only after this rectangle may either side send `DeviceLink` messages.
+that offers device links to this client answers with a `DeviceLink` message
+of subtype `Hello`, as servers answer the fence pseudo-encoding with a fence.
+The client sends `DeviceLink` messages only after it has received `Hello`. A
+server does not send `Hello` to view-only clients.
 
 Until numbers are assigned the implementation uses the private pseudo-encoding
 `0x44564C31` ("DVL1") and the message type 200 in both directions.
@@ -125,11 +119,12 @@ bytes, other payloads at most 1024.
 
 | Subtype | Direction | Name | Payload |
 |---|---|---|---|
+| 0 | S→C | `Hello` | U8 version (1), U8 flags (0), U16 maximum number of open channels |
 | 1 | S→C | `Request` | U8 kind, U8 name-length, name, U8 label-length, label (UTF-8) |
 | 2 | C→S | `RequestResult` | U8 status, U16 message-length, message (UTF-8) |
 | 3 | both | `Data` | bytes |
 | 4 | both | `Credit` | U32 additional bytes the sender may send on *channel* |
-| 5 | S→C | `SetParams` | U32 speed, U8 data bits, U8 parity, U8 stop bits, U8 flow |
+| 5 | S→C | `SetParams` | U8 mask, U32 speed, U8 data bits, U8 parity, U8 stop bits, U8 flow |
 | 6 | S→C | `SetLines` | U8 mask, U8 values, U16 break duration in ms |
 | 7 | C→S | `LineState` | U8 lines, U8 errors |
 | 8 | S→C | `Purge` | U8 which (1 receive, 2 transmit, 3 both) |
@@ -140,7 +135,12 @@ Kind: 1 `serial`, 2 `tcp`, 3 `tail`. Names are 1 to 32 characters of
 
 `RequestResult` status: 0 open, 1 refused by the user, 2 not available (port
 missing, connection refused, file not found), 3 busy, 4 not configured and no
-user to ask.
+user to ask. A status other than 0 ends the channel; neither side sends
+`Close` for it.
+
+`SetParams` mask: bit 0 speed, bit 1 format (data bits, parity, stop bits),
+bit 2 flow. The client applies only the fields in the mask and keeps its
+configuration for the others; a server sends only what the application set.
 
 Parity: 0 none, 1 odd, 2 even, 3 mark, 4 space. Stop bits: 1, 2, or 3 for
 1.5. Flow: 0 none, 1 RTS/CTS, 2 XON/XOFF. Lines (`SetLines` mask and values):
@@ -178,6 +178,12 @@ ok display /run/user/1000/vnc-device-link/:1/display
 error display refused
 ```
 
+On connecting, and whenever the owner changes, Xvnc sends `viewer present`
+or `viewer absent`. A request without a viewer fails with `error NAME
+no-viewer`; the application requests again after `viewer present`. Other
+errors are `refused`, `unavailable`, `busy`, `not-configured` (each followed by
+the viewer's message, if any), `too-many`, `invalid` and `closed`.
+
 The path is a symbolic link to the terminal device (`serial`) or a Unix
 socket (`tcp`, `tail`). It stays valid while the control connection is open;
 closing the connection, or `release NAME`, releases the device. Xvnc reports
@@ -196,7 +202,11 @@ The application opens the slave, sets speed and flow control with
 `tcsetattr`, and reads and writes as on a real port. Xvnc puts the master in
 packet mode (`TIOCPKT`) and sets `EXTPROC` on the terminal, so that the kernel
 reports every `tcsetattr` of the application (`TIOCPKT_IOCTL`); Xvnc then reads
-the settings and sends `SetParams`.
+the settings and sends `SetParams` with what changed. Because many programs
+clear all local flags, Xvnc sets `EXTPROC` again after each change. Xvnc keeps
+the terminal open itself, so the device stays usable while no application has
+it open; data the device sends meanwhile waits in the terminal until an
+application reads or flushes it.
 
 A pseudo terminal is not a full serial port. Tested on Linux 6.1:
 
@@ -208,16 +218,19 @@ A pseudo terminal is not a full serial port. Tested on Linux 6.1:
 | modem lines (`TIOCMGET`, `TIOCMSET`) | no, `ENOTTY` |
 | break (`tcsendbreak`) | no, succeeds silently |
 
-These go through the control connection instead:
+These go through the control connection instead, together with `speed` and
+`flow` for programs that do not use `tcsetattr`:
 
 ```
+speed display 9600
+flow display none|rtscts|xonxoff
 format display 7E1
 lines display dtr=1 rts=0
 break display 250
 purge display both
 ```
 
-Xvnc answers each with `ok` or `error TEXT` and reports changes of the input
+Xvnc answers each with `ok NAME` or `error NAME TEXT` and reports changes of the input
 lines: `lines display cts=1 dsr=1 ri=0 dcd=0`, `error display framing`.
 
 Often neither is needed: the viewer configuration can carry the whole

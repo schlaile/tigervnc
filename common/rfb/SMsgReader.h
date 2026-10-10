@@ -50,6 +50,7 @@ namespace rfb {
     bool readEnableContinuousUpdates();
 
     bool readFence();
+    bool readDeviceLink();
 
     bool readKeyEvent();
     bool readPointerEvent();

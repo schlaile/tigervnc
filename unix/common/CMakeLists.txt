@@ -3,6 +3,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 add_library(unixcommon STATIC
+  DeviceLinkHost.cxx
   randr.cxx)
 
 target_include_directories(unixcommon PUBLIC ${CMAKE_SOURCE_DIR}/unix/common)

@@ -71,6 +71,10 @@ namespace rfb {
   // UltraVNC-specific
   const int pseudoEncodingExtendedClipboard = 0xC0A1E5CE;
 
+  // Device links (doc/device-link.md); private value until a number is
+  // registered
+  const int pseudoEncodingDeviceLink = 0x44564C31;
+
   int encodingNum(const char* name);
   const char* encodingName(int num);
 }

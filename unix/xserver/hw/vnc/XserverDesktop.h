@@ -37,6 +37,7 @@
 #include <rfb/PixelBuffer.h>
 
 #include <unixcommon.h>
+#include <DeviceLinkHost.h>
 
 #include "vncInput.h"
 
@@ -47,7 +48,8 @@ namespace rfb {
 namespace network { class SocketListener; class Socket; }
 
 class XserverDesktop : public rfb::SDesktop, public rfb::FullFramePixelBuffer,
-                       public core::Timer::Callback {
+                       public core::Timer::Callback,
+                       public DeviceLinkHost::Watcher {
 public:
 
   XserverDesktop(int screenIndex,
@@ -70,6 +72,7 @@ public:
   void bell();
   void setLEDState(unsigned int state);
   void setDesktopName(const char* name);
+  void enableDeviceLink(const char* dir, unsigned maxChannels);
   void setCursor(int width, int height, int hotX, int hotY,
                  const unsigned char *rgbaData);
   void setCursorPos(int x, int y, bool warped);
@@ -106,6 +109,13 @@ public:
   void handleClipboardRequest() override;
   void handleClipboardAnnounce(bool available) override;
   void handleClipboardData(const char* data) override;
+  void deviceLinkOwnerChanged(bool present) override;
+  void handleDeviceLink(uint8_t subtype, uint16_t channel,
+                        const uint8_t* data, size_t len) override;
+
+  // DeviceLinkHost::Watcher callbacks
+  void watchFd(int fd, bool read, bool write) override;
+  void unwatchFd(int fd) override;
 
   // rfb::PixelBuffer callbacks
   void grabRegion(const core::Region& r) override;
@@ -122,6 +132,7 @@ private:
   rfb::VNCServer* server;
   std::list<network::SocketListener*> listeners;
   uint8_t* shadowFramebuffer;
+  DeviceLinkHost* deviceLink;
 
   uint32_t queryConnectId;
   network::Socket* queryConnectSocket;
