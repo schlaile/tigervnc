@@ -66,6 +66,7 @@
 #include "CConn.h"
 #ifdef HAVE_GNUTLS
 #include "FileDrop.h"
+#include "DeviceLink.h"
 #endif
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
@@ -98,7 +99,7 @@ static const unsigned bpsEstimateWindow = 1000;
 CConn::CConn()
   : serverPort(0), sock(nullptr),
     msgTimer(this, &CConn::processNextMsg), desktop(nullptr),
-    audioOutput(nullptr), fileDrop(nullptr),
+    audioOutput(nullptr), fileDrop(nullptr), deviceLink(nullptr),
     updateCount(0), pixelCount(0),
     lastServerEncoding((unsigned int)-1), bpsEstimate(20000000)
 {
@@ -126,6 +127,11 @@ CConn::CConn()
   }
 #endif
 
+  if (DeviceLink::wanted()) {
+    deviceLink = new DeviceLink(this);
+    supportsDeviceLink = true;
+  }
+
   if (customCompressLevel)
     setCompressLevel(::compressLevel);
 
@@ -144,6 +150,8 @@ CConn::~CConn()
 #ifdef HAVE_GNUTLS
   delete fileDrop;
 #endif
+
+  delete deviceLink;
 
   if (desktop)
     delete desktop;
@@ -191,6 +199,7 @@ CConn::~CConn()
 
 void CConn::connect(const char* vncServerName, network::Socket* socket)
 {
+  serverName = vncServerName;
   sock = socket;
   if(sock == nullptr) {
     try {
@@ -847,6 +856,36 @@ void CConn::setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint)
 #else
   (void)endpoint;
 #endif
+}
+
+void CConn::handleDeviceLink(uint8_t subtype, uint16_t channel,
+                             const uint8_t* data, size_t len)
+{
+  if (deviceLink)
+    deviceLink->handleMessage(subtype, channel, data, len);
+}
+
+bool CConn::isSecure()
+{
+  return csecurity != nullptr && csecurity->isSecure();
+}
+
+void CConn::sendDeviceLink(uint8_t subtype, uint16_t channel,
+                           const uint8_t* data, size_t len)
+{
+  if (state() != RFBSTATE_NORMAL)
+    return;
+  try {
+    writer()->writeDeviceLink(subtype, channel, data, len);
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+  }
+}
+
+void CConn::deviceLinkMessage(const char* text)
+{
+  if (desktop)
+    desktop->showMessage(text);
 }
 
 void CConn::fileDropMessage(const char* text, bool error)

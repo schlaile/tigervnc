@@ -37,6 +37,7 @@
 #include <rfb/msgTypes.h>
 #include <rfb/qemuTypes.h>
 #include <rfb/clipboardTypes.h>
+#include <rfb/DeviceLink.h>
 #include <rfb/Exception.h>
 #include <rfb/CMsgHandler.h>
 #include <rfb/CMsgReader.h>
@@ -189,6 +190,9 @@ bool CMsgReader::readMsg()
       break;
     case msgTypeQEMUServerMessage:
       ret = readQEMUServerMessage();
+      break;
+    case msgTypeDeviceLink:
+      ret = readDeviceLink();
       break;
     default:
       throw protocol_error(
@@ -530,6 +534,37 @@ bool CMsgReader::readFence()
   is->readBytes(data, len);
 
   handler->fence(flags, len, data);
+
+  return true;
+}
+
+bool CMsgReader::readDeviceLink()
+{
+  uint8_t subtype;
+  uint16_t channel;
+  uint32_t len;
+
+  if (!is->hasData(1 + 2 + 4))
+    return false;
+
+  is->setRestorePoint();
+
+  subtype = is->readU8();
+  channel = is->readU16();
+  len = is->readU32();
+
+  if (len > deviceLinkMaxData)
+    throw protocol_error(_("Too large device link message"));
+
+  if (!is->hasDataOrRestore(len))
+    return false;
+  is->clearRestorePoint();
+
+  std::vector<uint8_t> data(len);
+  if (len > 0)
+    is->readBytes(data.data(), len);
+
+  handler->handleDeviceLink(subtype, channel, data.data(), len);
 
   return true;
 }

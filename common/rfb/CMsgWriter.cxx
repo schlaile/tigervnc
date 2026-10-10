@@ -35,6 +35,7 @@
 #include <rfb/fenceTypes.h>
 #include <rfb/qemuTypes.h>
 #include <rfb/clipboardTypes.h>
+#include <rfb/DeviceLink.h>
 #include <rfb/PixelFormat.h>
 #include <rfb/ScreenSet.h>
 #include <rfb/ServerParams.h>
@@ -150,6 +151,21 @@ void CMsgWriter::writeFence(uint32_t flags, unsigned len, const uint8_t data[])
   os->writeU8(len);
   os->writeBytes(data, len);
 
+  endMsg();
+}
+
+void CMsgWriter::writeDeviceLink(uint8_t subtype, uint16_t channel,
+                                 const uint8_t* data, size_t len)
+{
+  if (len > deviceLinkMaxData)
+    throw std::out_of_range("Too large device link message");
+
+  startMsg(msgTypeDeviceLink);
+  os->writeU8(subtype);
+  os->writeU16(channel);
+  os->writeU32(len);
+  if (len > 0)
+    os->writeBytes(data, len);
   endMsg();
 }
 

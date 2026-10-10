@@ -180,6 +180,30 @@ the SetDesktopSize message then the screen will retain the original size.
 Specifies the X display on which the TigerVNC window should appear.
 .
 .TP
+.B \-DeviceLinks \fIlist\fP
+Devices of this computer that applications of the remote desktop may use, if
+the server supports it (see doc/device-link.md). Entries are separated by
+semicolons, each \fINAME\fP=\fITARGET\fP with one of
+\fBserial:\fP\fIPORT\fP[,\fISPEED\fP][,\fIFORMAT\fP][,\fBrtscts\fP|\fBxonxoff\fP|\fBnoflow\fP][,\fBdtr=\fP0|1][,\fBrts=\fP0|1][,\fBfixed\fP],
+\fBtcp:\fP\fIHOST\fP:\fIPORT\fP, \fBtail:\fP\fIPATH\fP or
+\fBtail-from-start:\fP\fIPATH\fP, for example
+\fBdisplay=serial:COM3,9600,8N1;cts=tail:C:\\CTS\\sales.log\fP. A serial port
+is opened with the given settings; the remote desktop may change them unless
+\fBfixed\fP is given. For a name that is not listed, the viewer asks the user
+which device to use. Default is empty.
+.
+.TP
+.B \-DeviceLinkOpen \fImode\fP
+What to do when the remote desktop asks for a listed device: \fBAsk\fP every
+time, ask \fBOnce\fP per name, allow it \fBAlways\fP, or \fBNever\fP give out
+any device. Default is \fBOnce\fP.
+.
+.TP
+.B \-DeviceLinkInsecure
+Give devices to the remote desktop even if the connection is not encrypted,
+for example inside a VPN. Default is off.
+.
+.TP
 .B \-DotWhenNoCursor (DEPRECATED)
 Show the dot cursor when the server sends an invisible cursor. Replaced by
 \fB-AlwaysCursor\fP and \fB-CursorType=Dot\fP
