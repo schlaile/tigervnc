@@ -1,0 +1,5 @@
+tigervnc-wws (1.16.80+filedrop1-1) unstable; urgency=medium
+
+  * Viewer of the file-drop branch for Debian bookworm.
+
+ -- Peter Schlaile <peter@schlaile.de>  Sat, 10 Oct 2026 18:28:57 +0200
