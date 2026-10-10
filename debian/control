@@ -1,0 +1,39 @@
+Source: tigervnc-wws
+Section: x11
+Priority: optional
+Maintainer: Peter Schlaile <peter@schlaile.de>
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake,
+ pkgconf,
+ gettext,
+ zlib1g-dev,
+ libpixman-1-dev,
+ libjpeg62-turbo-dev,
+ libfltk1.3-dev,
+ libgnutls28-dev,
+ nettle-dev,
+ libgmp-dev,
+ libx11-dev,
+ libxext-dev,
+ libxi-dev,
+ libxrandr-dev,
+ libxfixes-dev,
+ libxdamage-dev,
+ libxtst-dev,
+ libxcursor-dev,
+ libxinerama-dev,
+ libxft-dev,
+ libxrender-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/schlaile/tigervnc
+Rules-Requires-Root: no
+
+Package: tigervnc-wws-viewer
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: TigerVNC viewer with VNC File Drop for the WWS
+ The TigerVNC viewer of the file-drop branch: files dragged onto the viewer
+ window are offered to the VNC session through the side channel the server
+ announces (DesktopEndpoint) and uploaded with tus.  Installed as
+ tigervnc-wws-viewer next to the viewer of the distribution.
