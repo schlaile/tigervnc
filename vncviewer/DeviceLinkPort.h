@@ -31,19 +31,21 @@
 #include <string>
 #include <vector>
 
-// What a name stands for, as configured with DeviceLinks:
+// What a name stands for, as written in a profile (see
+// DeviceLinkProfile.h), split into words:
 //
-//   serial:PORT[,SPEED][,FORMAT][,rtscts|xonxoff|noflow][,dtr=0|1]
-//              [,rts=0|1][,fixed]
-//   tcp:HOST:PORT
-//   tail:PATH
-//   tail-from-start:PATH
+//   serial PORT [SPEED] [FORMAT] [rtscts|xonxoff|noflow] [dtr=0|1]
+//               [rts=0|1] [fixed]
+//   tcp HOST:PORT
+//   tail PATH [from-start]
 struct DeviceLinkTarget {
   DeviceLinkTarget();
 
   // Parses one target; false with *error set if it is not valid
-  static bool parse(const std::string& text, DeviceLinkTarget* target,
-                    std::string* error);
+  static bool parse(const std::vector<std::string>& words,
+                    DeviceLinkTarget* target, std::string* error);
+  std::vector<std::string> toWords() const;
+  // For messages
   std::string toString() const;
 
   uint8_t kind;

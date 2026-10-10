@@ -246,14 +246,31 @@ viewer becomes the owner; applications request their devices again.
 
 ## Viewer behaviour
 
-- Devices are configured with the viewer parameter `DeviceLinks`, entries
-  separated by semicolons:
+- Devices are configured in *device profiles*, kept in the file
+  `device-links` in the viewer's configuration directory
+  (`%APPDATA%\TigerVNC` on Windows):
 
   ```
-  display=serial:COM3,9600,8N1;cardreader=serial:/dev/ttyUSB0,dtr=1,rts=1;
-  payment=tcp:192.168.1.50:20007;cts=tail:C:\CTS\sales.log
+  [kasse]
+  description  Kasse Laden
+  server       wws.example.com:*        # optional: only these servers
+  ask          once                     # always | once | never
+  insecure     yes                      # also without encryption (VPN)
+  display      serial  COM3   9600 8N1
+  cardreader   serial  COM4   9600 7E1 dtr=1 rts=1 fixed
+  payment      tcp     192.168.1.50:20007
+  cts          tail    "C:\CTS\dummykasse.log"
+
+  [buero]
+  description  Büro, nur Etikettendrucker
+  labels       serial  COM5   115200 8N1
   ```
 
+- A connection uses the profile named by the viewer parameter
+  `DeviceLinkProfile`, which is saved with the connection like the other
+  parameters. Without a profile, or if the profile's `server` patterns do not
+  match the server, the viewer does not even announce support: the desktop
+  sees no device links and the user sees no dialogs.
 - A `serial` entry may carry the initialisation of the device: speed, format
   (`8N1`, `7E1`, ...), flow control (`rtscts`, `xonxoff`, `noflow`) and the
   initial modem lines (`dtr=1`, `rts=0`). The viewer applies it when it opens
@@ -262,20 +279,20 @@ viewer becomes the owner; applications request their devices again.
   ignores `SetParams` and `SetLines` and keeps its configuration. This places
   the knowledge of the hardware where the hardware is, and covers the settings
   a pseudo terminal cannot carry.
-- A request for a name that is not configured asks the user: "The remote
+- A request for a name that is not in the profile asks the user: "The remote
   desktop wants to use *Customer display* (serial port, "display"), which is
   not set up on this computer. Which one should it use?" with a list of the
   local serial ports (an address or a file for the other kinds), "Remember
   this choice", Use and Refuse. The list of local ports is shown to the user
-  only, never sent to the server. A remembered choice is added to
-  `DeviceLinks` and saved.
-- A request for a configured name is confirmed by the user according to
-  `DeviceLinkOpen`: `Ask` every time, `Once` per name and viewer run (the
-  default), `Always` without asking, `Never` refuses everything. The dialogs
+  only, never sent to the server. A remembered choice is added to the
+  profile.
+- A request for a name in the profile is confirmed by the user according to
+  the profile's `ask`: `always`, `once` per name and viewer run (the
+  default), or `never` (choosing the profile is the consent). The dialogs
   have no default button, so that a Return typed into the session does not
   answer them, and they close when the server withdraws the request.
-- Devices are offered only over an encrypted connection, unless
-  `DeviceLinkInsecure` is set (for example inside a VPN).
+- Devices are given out only over an encrypted connection, unless the profile
+  says `insecure yes` (for example inside a VPN).
 - `tail` starts at the end of the file unless the name is configured with
   `tail-from-start:`. A file that is replaced or cut short (rotated) is read
   from its beginning; the file may also appear only later.

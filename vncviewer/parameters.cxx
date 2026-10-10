@@ -206,25 +206,16 @@ core::BoolParameter
 #endif
 
 core::StringParameter
-  deviceLinks("DeviceLinks",
-              _("Devices of this computer the remote desktop may use, "
-                "separated by semicolons: NAME=serial:PORT[,SPEED]"
-                "[,FORMAT][,rtscts|xonxoff|noflow][,dtr=0|1][,rts=0|1]"
-                "[,fixed], NAME=tcp:HOST:PORT, NAME=tail:PATH"),
-              "");
-core::EnumParameter
-  deviceLinkOpen("DeviceLinkOpen",
-                 core::format(
-                   "%s (%s)",
-                   _("What to do when the remote desktop asks for a "
-                     "device of this computer"),
-                   "Ask, Once, Always, Never").c_str(),
-                 {"Ask", "Once", "Always", "Never"}, "Once");
-core::BoolParameter
-  deviceLinkInsecure("DeviceLinkInsecure",
-                     _("Let the remote desktop use devices of this "
-                       "computer even if the connection is not encrypted"),
-                     false);
+  deviceLinkProfile("DeviceLinkProfile",
+                    _("Profile of the devices of this computer that the "
+                      "remote desktop may use (see DeviceLinksFile); "
+                      "empty: none"),
+                    "");
+core::StringParameter
+  deviceLinksFile("DeviceLinksFile",
+                  _("File with the device profiles, default "
+                    "device-links in the configuration directory"),
+                  "");
 
 core::BoolParameter
   acceptClipboard("AcceptClipboard",
@@ -296,9 +287,8 @@ static core::VoidParameter* parameterArray[] = {
 #ifdef HAVE_AUDIO
   &playAudio,
 #endif
-  &deviceLinks,
-  &deviceLinkOpen,
-  &deviceLinkInsecure,
+  &deviceLinkProfile,
+  &deviceLinksFile,
   /* Compression */
   &autoSelect,
   &fullColour,
