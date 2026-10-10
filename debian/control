@@ -11,6 +11,7 @@ Build-Depends:
  libpixman-1-dev,
  libjpeg62-turbo-dev,
  libfltk1.3-dev,
+ fluid,
  libgnutls28-dev,
  nettle-dev,
  libgmp-dev,
