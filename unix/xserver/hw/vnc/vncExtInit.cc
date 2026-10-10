@@ -87,6 +87,20 @@ core::StringParameter
                    _("Side channel for files dropped onto the viewer, set by "
                      "the desktop session: [samehost ]URL TOKEN"), "");
 core::BoolParameter
+  deviceLinkEnabled("DeviceLink",
+                    _("Let applications use serial ports, network "
+                      "devices and files of the viewer's machine"),
+                    false);
+core::StringParameter
+  deviceLinkDir("DeviceLinkDir",
+                _("Directory for the device link control socket and "
+                  "devices, default $XDG_RUNTIME_DIR/vnc-device-link/:N"),
+                "");
+core::IntParameter
+  deviceLinkChannels("DeviceLinkChannels",
+                     _("Maximum number of devices open at a time"),
+                     16, 1, 65535);
+core::BoolParameter
   localhostOnly("localhost",
                 _("Only allow connections from localhost"), false);
 core::StringParameter
@@ -276,6 +290,13 @@ void vncExtensionInit(void)
 
         if (strlen(fileDropEndpoint) > 0)
           vncUpdateFileDropEndpoint();
+
+        if (scr == 0 && deviceLinkEnabled) {
+          std::string dir(deviceLinkDir);
+          if (dir.empty())
+            dir = DeviceLinkHost::defaultDir(vncGetDisplay());
+          desktop[scr]->enableDeviceLink(dir.c_str(), deviceLinkChannels);
+        }
 
         if (scr == 0 && vncInetdSock != -1 && listeners.empty()) {
           network::Socket* sock = new network::TcpSocket(vncInetdSock);

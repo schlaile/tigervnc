@@ -331,6 +331,20 @@ void VNCSConnectionST::setDesktopEndpointOrClose(const DesktopEndpoint& endpoint
   }
 }
 
+void VNCSConnectionST::writeDeviceLinkOrClose(uint8_t subtype,
+                                              uint16_t channel,
+                                              const uint8_t* data,
+                                              size_t len)
+{
+  try {
+    if (state() != RFBSTATE_NORMAL)
+      return;
+    writer()->writeDeviceLink(subtype, channel, data, len);
+  } catch(std::exception& e) {
+    close(e.what());
+  }
+}
+
 void VNCSConnectionST::setCursorOrClose()
 {
   try {
@@ -859,6 +873,23 @@ void VNCSConnectionST::supportsDesktopEndpoint()
 {
   for (const DesktopEndpoint& endpoint : server->getDesktopEndpoints())
     writer()->writeDesktopEndpoint(endpoint);
+}
+
+bool VNCSConnectionST::canOwnDeviceLinks() const
+{
+  return client.supportsEncoding(pseudoEncodingDeviceLink) &&
+         accessCheck(AccessKeyEvents);
+}
+
+void VNCSConnectionST::supportsDeviceLink()
+{
+  server->deviceLinkClientReady(this);
+}
+
+void VNCSConnectionST::handleDeviceLink(uint8_t subtype, uint16_t channel,
+                                        const uint8_t* data, size_t len)
+{
+  server->handleDeviceLink(this, subtype, channel, data, len);
 }
 
 void VNCSConnectionST::handleTimeout(core::Timer* t)

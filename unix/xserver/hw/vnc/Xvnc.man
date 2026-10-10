@@ -37,6 +37,22 @@ other possible values are 16 and 32. Anything else is likely to cause strange
 behaviour by applications and may prevent the server from starting at all.
 .
 .TP
+.B \-DeviceLink
+Let applications of the desktop use serial ports, network devices and files of
+the viewer's machine, if the viewer supports it (see doc/device-link.md).
+Applications request devices on the control socket in \fBDeviceLinkDir\fP.
+Default is off.
+.
+.TP
+.B \-DeviceLinkDir \fIdirectory\fP
+Directory for the device link control socket and the devices. Default is
+\fI$XDG_RUNTIME_DIR/vnc-device-link/:N\fP, with N the display number.
+.
+.TP
+.B \-DeviceLinkChannels \fInumber\fP
+Maximum number of devices open at a time. Default is 16.
+.
+.TP
 .B \-FileDropEndpoint \fI[samehost ]URL TOKEN\fP
 Announce a side channel to viewers that support it, where files dropped onto
 the viewer are offered and uploaded (see doc/file-drop.md). It is normally set

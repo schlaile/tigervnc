@@ -67,6 +67,9 @@ namespace rfb {
                                         const size_t* lengths,
                                         const uint8_t* const* data) = 0;
 
+    virtual void handleDeviceLink(uint8_t subtype, uint16_t channel,
+                                  const uint8_t* data, size_t len) = 0;
+
     ClientParams client;
   };
 }

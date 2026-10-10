@@ -364,7 +364,8 @@ void SConnection::setEncodings(int nEncodings, const int32_t* encodings)
 {
   int i;
   bool firstFence, firstContinuousUpdates, firstLEDState,
-       firstQEMUKeyEvent, firstExtMouseButtonsEvent, firstDesktopEndpoint;
+       firstQEMUKeyEvent, firstExtMouseButtonsEvent, firstDesktopEndpoint,
+       firstDeviceLink;
 
   preferredEncoding = encodingRaw;
   for (i = 0;i < nEncodings;i++) {
@@ -380,6 +381,7 @@ void SConnection::setEncodings(int nEncodings, const int32_t* encodings)
   firstQEMUKeyEvent = !client.supportsEncoding(pseudoEncodingQEMUKeyEvent);
   firstExtMouseButtonsEvent = !client.supportsEncoding(pseudoEncodingExtendedMouseButtons);
   firstDesktopEndpoint = !client.supportsEncoding(pseudoEncodingDesktopEndpoint);
+  firstDeviceLink = !client.supportsEncoding(pseudoEncodingDeviceLink);
 
   client.setEncodings(nEncodings, encodings);
 
@@ -397,6 +399,8 @@ void SConnection::setEncodings(int nEncodings, const int32_t* encodings)
     writer()->writeExtendedMouseButtonsSupport();
   if (client.supportsEncoding(pseudoEncodingDesktopEndpoint) && firstDesktopEndpoint)
     supportsDesktopEndpoint();
+  if (client.supportsEncoding(pseudoEncodingDeviceLink) && firstDeviceLink)
+    supportsDeviceLink();
 
   if (client.supportsEncoding(pseudoEncodingExtendedClipboard)) {
     uint32_t sizes[] = { 0 };
@@ -543,6 +547,17 @@ void SConnection::supportsLEDState()
 }
 
 void SConnection::supportsDesktopEndpoint()
+{
+}
+
+void SConnection::supportsDeviceLink()
+{
+}
+
+void SConnection::handleDeviceLink(uint8_t /*subtype*/,
+                                   uint16_t /*channel*/,
+                                   const uint8_t* /*data*/,
+                                   size_t /*len*/)
 {
 }
 
