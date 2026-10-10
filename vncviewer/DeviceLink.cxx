@@ -46,6 +46,7 @@
 
 #include "CConn.h"
 #include "DeviceLink.h"
+#include "DeviceLinkProfile.h"
 #include "parameters.h"
 
 using namespace rfb;
@@ -116,37 +117,6 @@ static const char* kindName(uint8_t kind)
   return "?";
 }
 
-// "name=target;name=target"
-static std::map<std::string, DeviceLinkTarget> configuredTargets()
-{
-  std::map<std::string, DeviceLinkTarget> targets;
-  std::string value(deviceLinks);
-  std::istringstream in(value);
-  std::string entry;
-
-  while (std::getline(in, entry, ';')) {
-    size_t start = entry.find_first_not_of(" \t\r\n");
-    if (start == std::string::npos)
-      continue;
-    entry = entry.substr(start);
-    size_t eq = entry.find('=');
-    if (eq == std::string::npos) {
-      vlog.error(_("Ignoring device \"%s\": expected NAME=TARGET"),
-                 entry.c_str());
-      continue;
-    }
-    DeviceLinkTarget target;
-    std::string error;
-    if (!DeviceLinkTarget::parse(entry.substr(eq + 1), &target, &error)) {
-      vlog.error(_("Ignoring device \"%s\": %s"),
-                 entry.substr(0, eq).c_str(), error.c_str());
-      continue;
-    }
-    targets[entry.substr(0, eq)] = target;
-  }
-  return targets;
-}
-
 DeviceLink::DeviceLink(CConn* cc_)
   : cc(cc_), helloReceived(false), maxChannels(0)
 {
@@ -166,10 +136,24 @@ DeviceLink::~DeviceLink()
   }
 }
 
-bool DeviceLink::wanted()
+bool DeviceLink::wanted(const char* server)
 {
-  return !(::deviceLinkOpen == "Never" &&
-           std::string(deviceLinks).find('=') == std::string::npos);
+  DeviceLinkProfile profile;
+  std::string error;
+
+  if (strlen(deviceLinkProfile) == 0)
+    return false;
+  if (!DeviceLinkProfile::load((const char*)deviceLinkProfile, &profile,
+                               &error)) {
+    vlog.error("%s", error.c_str());
+    return false;
+  }
+  if (!profile.matchesServer(server)) {
+    vlog.info(_("Device profile \"%s\" is not for %s"),
+              profile.name.c_str(), server);
+    return false;
+  }
+  return true;
 }
 
 void DeviceLink::handleMessage(uint8_t subtype, uint16_t id,
@@ -486,8 +470,7 @@ DeviceLink::Decision DeviceLink::decide(Channel* channel,
                                         std::string* message,
                                         uint8_t* status)
 {
-  std::map<std::string, DeviceLinkTarget> targets(configuredTargets());
-  auto it = targets.find(channel->name);
+  DeviceLinkProfile profile;
   uint8_t kind = channel->kind;
 
   *status = deviceLinkRefused;
@@ -499,22 +482,25 @@ DeviceLink::Decision DeviceLink::decide(Channel* channel,
     return No;
   }
 
-  if (!cc->isSecure() && !deviceLinkInsecure) {
-    *message = _("The connection is not encrypted (DeviceLinkInsecure)");
+  // Read again for every request, so that changes apply at once
+  if (!DeviceLinkProfile::load((const char*)deviceLinkProfile, &profile,
+                               message)) {
+    *status = deviceLinkUnavailable;
+    return No;
+  }
+  if (!profile.matchesServer(cc->getServerName())) {
+    *message = core::format(_("Device profile \"%s\" is not for this "
+                              "server"), profile.name.c_str());
+    return No;
+  }
+  if (!cc->isSecure() && !profile.insecure) {
+    *message = _("The connection is not encrypted (see \"insecure\" in "
+                 "the device profile)");
     return No;
   }
 
-  if (::deviceLinkOpen == "Never" && it == targets.end()) {
-    *status = deviceLinkNotConfigured;
-    *message = _("Not set up on this computer");
-    return No;
-  }
-  if (::deviceLinkOpen == "Never") {
-    *message = _("Not allowed (DeviceLinkOpen=Never)");
-    return No;
-  }
-
-  if (it == targets.end())
+  auto it = profile.devices.find(channel->name);
+  if (it == profile.devices.end())
     return NeedsUser;
 
   if (it->second.kind != kind) {
@@ -525,8 +511,9 @@ DeviceLink::Decision DeviceLink::decide(Channel* channel,
   }
 
   *target = it->second;
-  if (::deviceLinkOpen == "Ask" ||
-      (::deviceLinkOpen == "Once" && !confirmed.count(channel->name)))
+  if (profile.ask == DeviceLinkProfile::AskAlways ||
+      (profile.ask == DeviceLinkProfile::AskOnce &&
+       !confirmed.count(channel->name)))
     return NeedsUser;
   return Yes;
 }
@@ -567,10 +554,11 @@ DeviceLink::Decision DeviceLink::askUser(Channel* channel,
   if (!chooseTarget(this, id, text, kind, &value, &remember))
     return No;
 
-  std::string prefix(kind == deviceLinkSerial ? "serial:" :
-                     kind == deviceLinkTCP ? "tcp:" : "tail:");
   std::string error;
-  if (!DeviceLinkTarget::parse(prefix + value, target, &error)) {
+  if (!DeviceLinkTarget::parse({ kind == deviceLinkSerial ? "serial" :
+                                 kind == deviceLinkTCP ? "tcp" : "tail",
+                                 value },
+                               target, &error)) {
     fl_alert("%s", error.c_str());
     *status = deviceLinkUnavailable;
     *message = error;
@@ -578,20 +566,10 @@ DeviceLink::Decision DeviceLink::askUser(Channel* channel,
   }
   confirmed.insert(name);
 
-  if (remember) {
-    std::string links(deviceLinks);
-    while (!links.empty() && (links.back() == ';' || links.back() == ' '))
-      links.pop_back();
-    if (!links.empty())
-      links += ";";
-    links += name + "=" + target->toString();
-    deviceLinks.setParam(links.c_str());
-    try {
-      saveViewerParameters(nullptr, cc->getServerName());
-    } catch (std::exception& e) {
-      vlog.error(_("Could not save the device: %s"), e.what());
-    }
-  }
+  if (remember &&
+      !DeviceLinkProfile::addDevice((const char*)deviceLinkProfile, name,
+                                    *target, &error))
+    vlog.error(_("Could not save the device: %s"), error.c_str());
 
   return Yes;
 }

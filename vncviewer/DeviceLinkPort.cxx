@@ -76,8 +76,8 @@ static bool parseFormat(const std::string& word, DeviceLinkTarget* t)
   static const char parities[] = "NOEMS";
   const char* p;
 
-  if (word.size() < 3 || word[0] < '5' || word[0] > '8' ||
-      (p = strchr(parities, toupper(word[1]))) == nullptr || *p == '\0')
+  if (word.size() < 3 || word[0] < '5' || word[0] > '8' || word[1] == '\0' ||
+      (p = strchr(parities, toupper(word[1]))) == nullptr)
     return false;
   std::string stop(word.substr(2));
   if (stop != "1" && stop != "2" && stop != "1.5")
@@ -90,40 +90,43 @@ static bool parseFormat(const std::string& word, DeviceLinkTarget* t)
   return true;
 }
 
-bool DeviceLinkTarget::parse(const std::string& text,
+bool DeviceLinkTarget::parse(const std::vector<std::string>& words,
                              DeviceLinkTarget* t, std::string* error)
 {
-  size_t colon = text.find(':');
-  if (colon == std::string::npos) {
-    *error = core::format(_("\"%s\" has no kind (serial:, tcp:, tail:)"),
-                          text.c_str());
-    return false;
-  }
-  std::string kind(text.substr(0, colon));
-  std::string rest(text.substr(colon + 1));
-
   *t = DeviceLinkTarget();
 
+  if (words.size() < 2) {
+    *error = _("Expected a kind (serial, tcp, tail) and a device");
+    return false;
+  }
+  const std::string& kind = words[0];
+  t->where = words[1];
+
   if (kind == "tcp") {
-    size_t port = rest.rfind(':');
+    size_t port = t->where.rfind(':');
     if (port == std::string::npos || port == 0 ||
-        port + 1 == rest.size()) {
-      *error = core::format(_("\"%s\" is not HOST:PORT"), rest.c_str());
+        port + 1 == t->where.size()) {
+      *error = core::format(_("\"%s\" is not HOST:PORT"), t->where.c_str());
+      return false;
+    }
+    if (words.size() > 2) {
+      *error = core::format(_("Unknown option \"%s\""), words[2].c_str());
       return false;
     }
     t->kind = deviceLinkTCP;
-    t->where = rest;
     return true;
   }
 
-  if (kind == "tail" || kind == "tail-from-start") {
-    if (rest.empty()) {
-      *error = _("No file given");
-      return false;
-    }
+  if (kind == "tail") {
     t->kind = deviceLinkTail;
-    t->where = rest;
-    t->fromStart = kind == "tail-from-start";
+    for (size_t i = 2; i < words.size(); i++) {
+      if (words[i] == "from-start") {
+        t->fromStart = true;
+      } else {
+        *error = core::format(_("Unknown option \"%s\""), words[i].c_str());
+        return false;
+      }
+    }
     return true;
   }
 
@@ -133,15 +136,10 @@ bool DeviceLinkTarget::parse(const std::string& text,
   }
 
   t->kind = deviceLinkSerial;
-  std::istringstream in(rest);
-  std::string word;
-  bool first = true;
-  while (std::getline(in, word, ',')) {
-    if (first) {
-      t->where = word;
-      first = false;
-    } else if (!word.empty() &&
-               word.find_first_not_of("0123456789") == std::string::npos) {
+  for (size_t i = 2; i < words.size(); i++) {
+    const std::string& word = words[i];
+    if (!word.empty() &&
+        word.find_first_not_of("0123456789") == std::string::npos) {
       t->speed = strtoul(word.c_str(), nullptr, 10);
     } else if (parseFormat(word, t)) {
     } else if (word == "rtscts") {
@@ -157,47 +155,59 @@ bool DeviceLinkTarget::parse(const std::string& text,
     } else if (word == "fixed") {
       t->fixed = true;
     } else {
-      *error = core::format(_("Unknown serial option \"%s\""),
-                            word.c_str());
+      *error = core::format(_("Unknown option \"%s\""), word.c_str());
       return false;
     }
-  }
-  if (t->where.empty()) {
-    *error = _("No serial port given");
-    return false;
   }
   return true;
 }
 
-std::string DeviceLinkTarget::toString() const
+std::vector<std::string> DeviceLinkTarget::toWords() const
 {
+  std::vector<std::string> words;
+
   switch (kind) {
   case deviceLinkTCP:
-    return "tcp:" + where;
+    return { "tcp", where };
   case deviceLinkTail:
-    return (fromStart ? "tail-from-start:" : "tail:") + where;
+    words = { "tail", where };
+    if (fromStart)
+      words.push_back("from-start");
+    return words;
   }
 
-  std::string s("serial:" + where);
+  words = { "serial", where };
   if (speed)
-    s += "," + std::to_string(speed);
+    words.push_back(std::to_string(speed));
   if (dataBits) {
-    s += "," + std::to_string(dataBits) + "NOEMS"[parity];
-    s += stopBits == deviceLinkStopBits2 ? "2" :
-         stopBits == deviceLinkStopBits15 ? "1.5" : "1";
+    std::string format(std::to_string(dataBits) + "NOEMS"[parity]);
+    format += stopBits == deviceLinkStopBits2 ? "2" :
+              stopBits == deviceLinkStopBits15 ? "1.5" : "1";
+    words.push_back(format);
   }
   if (flow == deviceLinkFlowRTSCTS)
-    s += ",rtscts";
+    words.push_back("rtscts");
   else if (flow == deviceLinkFlowXONXOFF)
-    s += ",xonxoff";
+    words.push_back("xonxoff");
   else if (flow == deviceLinkFlowNone)
-    s += ",noflow";
+    words.push_back("noflow");
   if (dtr >= 0)
-    s += ",dtr=" + std::to_string(dtr);
+    words.push_back("dtr=" + std::to_string(dtr));
   if (rts >= 0)
-    s += ",rts=" + std::to_string(rts);
+    words.push_back("rts=" + std::to_string(rts));
   if (fixed)
-    s += ",fixed";
+    words.push_back("fixed");
+  return words;
+}
+
+std::string DeviceLinkTarget::toString() const
+{
+  std::string s;
+  for (const std::string& word : toWords()) {
+    if (!s.empty())
+      s += " ";
+    s += word;
+  }
   return s;
 }
 

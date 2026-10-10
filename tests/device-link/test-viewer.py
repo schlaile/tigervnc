@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 #
 # End-to-end test of device links (doc/device-link.md): Xvnc with
-# -DeviceLink, vncviewer (shown on a second Xvnc) with DeviceLinks for a
-# serial port (a socat pseudo terminal pair), a TCP echo server and a
-# growing file, and an application on the control socket of the first
-# Xvnc.
+# -DeviceLink, vncviewer (shown on a second Xvnc) with a device profile
+# for a serial port (a pseudo terminal), a TCP echo server and a growing
+# file, and an application on the control socket of the first Xvnc.
 #
 #   tests/device-link/test-viewer.py PATH-TO-Xvnc PATH-TO-vncviewer
 #
@@ -136,21 +135,53 @@ def main():
         app = App(os.path.join(devdir, "control"))
         check(app.line() == "viewer absent", "no viewer yet")
 
-        links = ";".join([
-            "display=serial:%s,9600,7E1" % port,
-            "payment=tcp:127.0.0.1:%d" % srv.getsockname()[1],
-            "cts=tail:%s" % tail,
-        ])
-        env = dict(os.environ, DISPLAY=":48", HOME=tmp)
-        procs.append(subprocess.Popen(
-            [viewer, "-DeviceLinks", links, "-DeviceLinkOpen", "Once",
-             "-DeviceLinkInsecure", "-Log", "*:stderr:100",
-             "127.0.0.1::5947"],
-            env=env, stdout=log, stderr=log))
+        profiles = os.path.join(tmp, "device-links")
+        with open(profiles, "w") as f:
+            f.write("""# Test profiles
+[kasse]
+description  Kasse Test
+server       127.0.0.1::59*
+ask          once
+insecure     yes
+display      serial  %s   9600 7E1     # Kundendisplay
+payment      tcp     127.0.0.1:%d
+cts          tail    "%s"
 
+[anderswo]
+server       other.example.com:*
+insecure     yes
+display      serial  %s
+""" % (port, srv.getsockname()[1], tail, port))
+
+        env = dict(os.environ, DISPLAY=":48", HOME=tmp)
+
+        def start_viewer(profile):
+            p = subprocess.Popen(
+                [viewer, "-DeviceLinkProfile", profile, "-DeviceLinksFile",
+                 profiles, "-Log", "*:stderr:100", "127.0.0.1::5947"],
+                env=env, stdout=log, stderr=log)
+            procs.append(p)
+            return p
+
+        # A profile for another server: no device links at all
+        other = start_viewer("anderswo")
+        try:
+            line = app.line(3)
+        except (socket.timeout, TimeoutError):
+            line = ""
+        check(line == "", "profile for another server offers nothing")
+        other.terminate()
+        other.wait()
+        # (a timed out file object cannot be read any more)
+        app.f.close()
+        app.sock.close()
+        app = App(os.path.join(devdir, "control"))
+        app.line()
+
+        start_viewer("kasse")
         check(app.line() == "viewer present", "viewer connected")
         os.close(slave)
-        run(app, devfd, tail, devdir, env)
+        run(app, devfd, tail, devdir, env, profiles)
     finally:
         for p in reversed(procs):
             p.terminate()
@@ -193,7 +224,7 @@ def allow(env):
     return win is not None
 
 
-def run(app, devfd, tail, devdir, env):
+def run(app, devfd, tail, devdir, env, profiles):
     # -- serial, confirmed by the user (DeviceLinkOpen=Once)
     app.cmd("request display serial Kundendisplay")
     check(allow(env), "the user is asked")
@@ -271,9 +302,31 @@ def run(app, devfd, tail, devdir, env):
     app2.cmd("request cts serial X")
     check(app2.line() == "error cts busy", "busy for other applications")
 
-    # -- not configured: the user is asked for a port; the server
-    #    withdrawing the request closes the dialog
+    # -- not configured: the user chooses, and the choice is remembered
+    #    in the profile
+    scanfd, scanslave = pty.openpty()
+    scanport = os.ttyname(scanslave)
+    os.close(scanslave)
     app2.cmd("request scanner serial Scanner")
+    win = dialog(env)
+    check(win is not None, "chooser for an unconfigured name")
+    if win:
+        click(env, win, 160 + 150, 85 + 12)          # the input field
+        subprocess.run(["xdotool", "key", "ctrl+a"], env=env)
+        subprocess.run(["xdotool", "type", scanport], env=env)
+        click(env, win, 270 + 47, 160 + 14)          # "Use"
+    reply = app2.line()
+    check(reply.startswith("ok scanner "), "chosen port opened: " + reply)
+    text = open(profiles).read()
+    kasse = text.split("[anderswo]")[0]
+    check("scanner      serial %s" % scanport in kasse,
+          "choice remembered in the profile")
+    os.close(scanfd)
+    app2.cmd("release scanner")
+    app2.line()
+
+    # -- the server withdrawing a request closes the dialog
+    app2.cmd("request scanner2 serial Scanner")
     win = dialog(env)
     check(win is not None, "chooser for an unconfigured name")
     app2.f.close()

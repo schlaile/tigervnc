@@ -180,28 +180,47 @@ the SetDesktopSize message then the screen will retain the original size.
 Specifies the X display on which the TigerVNC window should appear.
 .
 .TP
-.B \-DeviceLinks \fIlist\fP
-Devices of this computer that applications of the remote desktop may use, if
-the server supports it (see doc/device-link.md). Entries are separated by
-semicolons, each \fINAME\fP=\fITARGET\fP with one of
-\fBserial:\fP\fIPORT\fP[,\fISPEED\fP][,\fIFORMAT\fP][,\fBrtscts\fP|\fBxonxoff\fP|\fBnoflow\fP][,\fBdtr=\fP0|1][,\fBrts=\fP0|1][,\fBfixed\fP],
-\fBtcp:\fP\fIHOST\fP:\fIPORT\fP, \fBtail:\fP\fIPATH\fP or
-\fBtail-from-start:\fP\fIPATH\fP, for example
-\fBdisplay=serial:COM3,9600,8N1;cts=tail:C:\\CTS\\sales.log\fP. A serial port
-is opened with the given settings; the remote desktop may change them unless
-\fBfixed\fP is given. For a name that is not listed, the viewer asks the user
-which device to use. Default is empty.
+.B \-DeviceLinkProfile \fIname\fP
+The device profile for this connection: which serial ports, network devices
+and files of this computer applications of the remote desktop may use, if the
+server supports it (see doc/device-link.md). The profiles are kept in
+\fBDeviceLinksFile\fP. Without a profile, or with a profile whose \fBserver\fP
+lines do not match the server, the viewer offers no devices at all. Default is
+empty.
 .
 .TP
-.B \-DeviceLinkOpen \fImode\fP
-What to do when the remote desktop asks for a listed device: \fBAsk\fP every
-time, ask \fBOnce\fP per name, allow it \fBAlways\fP, or \fBNever\fP give out
-any device. Default is \fBOnce\fP.
-.
-.TP
-.B \-DeviceLinkInsecure
-Give devices to the remote desktop even if the connection is not encrypted,
-for example inside a VPN. Default is off.
+.B \-DeviceLinksFile \fIfile\fP
+The file with the device profiles. Default is \fIdevice-links\fP in the
+configuration directory. Each profile starts with \fB[\fP\fIname\fP\fB]\fP,
+followed by lines of words separated by blanks; double quotes keep a word with
+blanks together, \fB#\fP starts a comment:
+.RS
+.nf
+
+[kasse]
+description  Kasse Laden
+server       wws.example.com:*
+ask          once
+insecure     yes
+display      serial  COM3   9600 8N1
+cardreader   serial  COM4   9600 7E1 dtr=1 rts=1 fixed
+payment      tcp     192.168.1.50:20007
+cts          tail    "C:\\CTS\\dummykasse.log"
+.fi
+.RE
+.IP
+\fBserver\fP limits the profile to servers matching one of the patterns (with
+\fB*\fP and \fB?\fP), as given to the viewer. \fBask\fP is \fBalways\fP
+(confirm every use), \fBonce\fP (confirm each device once per viewer run, the
+default) or \fBnever\fP. \fBinsecure yes\fP gives devices out over connections
+that are not encrypted, for example inside a VPN. Every other line is a
+device: its name, then \fBserial\fP \fIPORT\fP [\fISPEED\fP] [\fIFORMAT\fP]
+[\fBrtscts\fP|\fBxonxoff\fP|\fBnoflow\fP] [\fBdtr=\fP0|1] [\fBrts=\fP0|1]
+[\fBfixed\fP], \fBtcp\fP \fIHOST\fP:\fIPORT\fP, or \fBtail\fP \fIPATH\fP
+[\fBfrom-start\fP]. A serial port is opened with the given settings; the
+remote desktop may change them unless \fBfixed\fP is given. For a name that
+is not in the profile, the viewer asks the user which device to use and can
+add the choice to the profile.
 .
 .TP
 .B \-DotWhenNoCursor (DEPRECATED)

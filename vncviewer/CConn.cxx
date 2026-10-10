@@ -127,11 +127,6 @@ CConn::CConn()
   }
 #endif
 
-  if (DeviceLink::wanted()) {
-    deviceLink = new DeviceLink(this);
-    supportsDeviceLink = true;
-  }
-
   if (customCompressLevel)
     setCompressLevel(::compressLevel);
 
@@ -201,6 +196,11 @@ void CConn::connect(const char* vncServerName, network::Socket* socket)
 {
   serverName = vncServerName;
   sock = socket;
+
+  if (DeviceLink::wanted(vncServerName)) {
+    deviceLink = new DeviceLink(this);
+    supportsDeviceLink = true;
+  }
   if(sock == nullptr) {
     try {
 #ifndef WIN32

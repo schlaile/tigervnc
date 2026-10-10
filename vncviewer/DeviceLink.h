@@ -48,8 +48,9 @@ public:
   DeviceLink(CConn* cc);
   ~DeviceLink();
 
-  // Whether device links are to be offered to servers at all
-  static bool wanted();
+  // Whether device links are to be offered to server, as the user
+  // typed it: only with a device profile (DeviceLinkProfile) for it
+  static bool wanted(const char* server);
 
   // Main thread: a DeviceLink message from the server
   void handleMessage(uint8_t subtype, uint16_t channel,
