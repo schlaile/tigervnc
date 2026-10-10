@@ -1,3 +1,10 @@
+tigervnc-wws (1.16.80+filedrop1-2) unstable; urgency=medium
+
+  * Build-depend on fluid: the FLTK CMake targets of bookworm reference
+    /usr/bin/fluid without shipping it.
+
+ -- Peter Schlaile <peter@schlaile.de>  Sat, 10 Oct 2026 18:32:14 +0200
+
 tigervnc-wws (1.16.80+filedrop1-1) unstable; urgency=medium
 
   * Viewer of the file-drop branch for Debian bookworm.
