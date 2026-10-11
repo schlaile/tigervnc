@@ -38,6 +38,7 @@ import os
 import select
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -90,14 +91,31 @@ def release(control, name):
 
 
 def stop(proc):
+    """Ends the command with all its children (it runs in a process group
+    of its own)"""
     if proc.poll() is not None:
         return
-    proc.terminate()
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
     try:
         proc.wait(3)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         proc.wait()
+
+
+def reader_gone(watch):
+    """Whether whoever reads our stdout (a pipe) has closed it: a program
+    that starts us as a device closes the pipe instead of killing us"""
+    if watch is None:
+        return False
+    return any(ev & (select.POLLERR | select.POLLHUP)
+               for _, ev in watch.poll(0))
 
 
 def main():
@@ -126,6 +144,13 @@ def main():
                                     args.label or args.name)
 
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(143))
+    signal.signal(signal.SIGHUP, lambda *a: sys.exit(129))
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+    watch = None
+    if stat.S_ISFIFO(os.fstat(1).st_mode):
+        watch = select.poll()
+        watch.register(1, 0)
 
     viewer = False
     proc = None
@@ -136,7 +161,14 @@ def main():
                 control.send(request)
                 asked = True
 
-            timeout = 0.2 if proc is not None else None
+            if reader_gone(watch):
+                if proc is not None:
+                    stop(proc)
+                    proc = None
+                    release(control, args.name)
+                return 0
+
+            timeout = 0.2 if proc is not None or watch is not None else None
             for line in control.lines(timeout):
                 words = line.split(" ", 2)
                 if line == "viewer present":
@@ -147,7 +179,7 @@ def main():
                         and proc is None:
                     path = words[2]
                     argv = [a.replace("{}", path) for a in command]
-                    proc = subprocess.Popen(argv)
+                    proc = subprocess.Popen(argv, start_new_session=True)
                 elif words[:2] == ["error", args.name]:
                     asked = False
                     reason = words[2] if len(words) > 2 else ""

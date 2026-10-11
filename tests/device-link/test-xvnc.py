@@ -357,6 +357,39 @@ def run(port, devdir):
     sub, chan2, payload = viewer.expect(CLOSE)
     check(chan2 == chan, "disconnect releases devices")
 
+    # -- vnc-device as a pipe device of an application: it ends, with the
+    #    driver and its children, when the application closes the pipe
+    vnc_device = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "..", "..", "contrib", "device-link",
+                              "vnc-device")
+    marker = "vnc-device-test-%d" % os.getpid()
+    wws = subprocess.Popen(
+        ["sh", "-c", "%s %s --dir %s cardreader serial -- sh -c "
+         "'sleep 1007 & cat {}' %s"
+         % (sys.executable, vnc_device, devdir, marker)],
+        stdout=subprocess.PIPE)
+    sub, chan, payload = viewer.expect(REQUEST)
+    viewer.send(REQUEST_RESULT, chan, bytes([0, 0, 0]))
+    time.sleep(0.5)
+    viewer.send(DATA, chan, b"%B1234?\n")
+    check(wws.stdout.readline() == b"%B1234?\n", "card through vnc-device")
+    viewer.expect(CREDIT)
+    wws.stdout.close()
+    start = time.time()
+    sub, chan2, payload = viewer.expect(CLOSE)
+    check(chan2 == chan, "closing the pipe releases the device")
+    viewer.send(CLOSE, chan, bytes([0]))
+    try:
+        wws.wait(5)
+    except subprocess.TimeoutExpired:
+        wws.kill()
+    check(time.time() - start < 3, "and ends vnc-device at once")
+    time.sleep(0.5)
+    ps = subprocess.run(["ps", "-eo", "args"], capture_output=True,
+                        text=True).stdout
+    check(marker not in ps and "sleep 1007" not in ps,
+          "no children are left")
+
 
 if __name__ == "__main__":
     main()
