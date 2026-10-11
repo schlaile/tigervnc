@@ -37,6 +37,7 @@
 #include <rfb/CMsgWriter.h>
 
 #include "DesktopWindow.h"
+#include "DeviceLink.h"
 #include "OptionsDialog.h"
 #include "parameters.h"
 #include "vncviewer.h"
@@ -1111,6 +1112,10 @@ void DesktopWindow::checkFocus(void *data)
   Fl::remove_idle(checkFocus, data);
 
   DesktopWindow *dw = (DesktopWindow*)data;
+
+  // Data of shared devices goes to the viewer the user works with
+  DeviceLink::setFocus(dw->hasFocus());
+
   // Focus might not stay with us just because we have grabbed the
   // keyboard. E.g. we might have sub windows, or the user clicked on
   // another application. Make sure we update our grabs with the focus

@@ -22,7 +22,7 @@ MSG_DEVICE_LINK = 200
 PSEUDO_DEVICE_LINK = 0x44564C31
 
 HELLO, REQUEST, REQUEST_RESULT, DATA, CREDIT, SET_PARAMS, SET_LINES, \
-    LINE_STATE, PURGE, CLOSE = range(10)
+    LINE_STATE, PURGE, CLOSE, LOCK, LOCK_RESULT, UNLOCK = range(13)
 
 failures = 0
 
@@ -149,8 +149,8 @@ def run(port, devdir):
     app.cmd("request display serial Kundendisplay")
     sub, chan, payload = viewer.expect(REQUEST)
     check(payload == bytes([1, 7]) + b"display" + bytes([13]) +
-          b"Kundendisplay" + bytes([0, 0, 0]),
-          "request carries kind, name, label, no waiting")
+          b"Kundendisplay" + bytes([0]),
+          "request carries kind, name, label, flags")
     display = chan
     viewer.send(REQUEST_RESULT, display, bytes([0, 0, 0]))
     reply = app.line()
@@ -291,13 +291,45 @@ def run(port, devdir):
     viewer.send(CLOSE, display, bytes([0]))
     check(app.line() == "ok display", "release confirmed after the viewer")
 
-    # -- waiting is passed on to the viewer
-    app.cmd("request scanner serial wait=30 Scanner")
-    sub, chan, payload = viewer.expect(REQUEST)
-    check(payload.endswith(b"Scanner" + bytes([1, 0, 30])),
-          "wait=30 reaches the viewer")
-    viewer.send(REQUEST_RESULT, chan, bytes([3, 0, 4]) + b"busy")
-    check(app.line() == "error scanner busy busy", "busy after waiting")
+    # -- locks: any application of the session may lock a requested
+    #    device; the viewer decides
+    app.cmd("request scanner serial Scanner")
+    sub, scanner, payload = viewer.expect(REQUEST)
+    viewer.send(REQUEST_RESULT, scanner, bytes([0, 0, 0]))
+    app.line()
+    app2.cmd("lock scanner wait=30")
+    sub, chan, payload = viewer.expect(LOCK)
+    check(chan == scanner and payload == bytes([1, 0, 30]),
+          "lock with wait=30 reaches the viewer")
+    app.cmd("lock scanner")
+    check(app.line() == "error scanner busy this session",
+          "one lock per session")
+    viewer.send(LOCK_RESULT, scanner, bytes([0, 0, 0]))
+    check(app2.line() == "ok scanner", "locked")
+    app.cmd("unlock scanner")
+    check(app.line() == "error scanner not-locked", "only the locker unlocks")
+    app2.cmd("unlock scanner")
+    check(app2.line() == "ok scanner", "unlocked")
+    viewer.expect(UNLOCK)
+    app2.cmd("lock scanner")
+    sub, chan, payload = viewer.expect(LOCK)
+    check(payload == bytes([0, 0, 0]), "lock without waiting")
+    viewer.send(LOCK_RESULT, scanner, bytes([3, 0, 7]) + b"kasse:2")
+    check(app2.line() == "error scanner busy kasse:2", "busy with holder")
+    app2.cmd("lock scanner")
+    viewer.expect(LOCK)
+    viewer.send(LOCK_RESULT, scanner, bytes([0, 0, 0]))
+    app2.line()
+    app2.f.close()
+    app2.sock.close()
+    sub, chan, payload = viewer.expect(UNLOCK)
+    check(chan == scanner, "lock ends with its application")
+    app2 = App(control)
+    app2.line()
+    app.cmd("release scanner")
+    viewer.expect(CLOSE)
+    viewer.send(CLOSE, scanner, bytes([0]))
+    check(app.line() == "ok scanner", "scanner released")
 
     # -- viewer closes a device
     viewer.send(CLOSE, cts, bytes([1]))

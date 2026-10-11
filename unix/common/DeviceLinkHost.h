@@ -76,10 +76,11 @@ private:
   void closeControl(Control* control);
 
   // Commands
-  // wait: -1 no, 0 until released, else seconds
   void request(Control* control, const std::string& name,
-               const std::string& kind, const std::string& label,
-               int wait);
+               const std::string& kind, const std::string& label);
+  // wait: -1 no, 0 until free, else seconds
+  void lock(Control* control, const std::string& name, int wait);
+  void unlock(Device* device);
   // ack: answer "ok NAME" on control once the viewer has closed it
   void release(Control* control, const std::string& name, bool ack);
   Device* serialFor(Control* control, const std::string& name);
@@ -105,6 +106,7 @@ private:
   void handleCredit(Device* device, const uint8_t* data, size_t len);
   void handleLineState(Device* device, const uint8_t* data, size_t len);
   void handleClose(Device* device);
+  void handleLockResult(Device* device, const uint8_t* data, size_t len);
 
   void send(uint8_t subtype, uint16_t channel,
             const uint8_t* data, size_t len);

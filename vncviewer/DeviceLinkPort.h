@@ -110,6 +110,9 @@ public:
                                  std::string* holder);
   ~DeviceLinkLock();
 
+  // Replaces what other viewers read as *holder
+  void setInfo(const std::string& info);
+
 private:
 #ifdef WIN32
   DeviceLinkLock(void* handle_) : handle(handle_) {}

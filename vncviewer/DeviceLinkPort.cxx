@@ -568,11 +568,7 @@ public:
     ioctl(fd, TIOCGICOUNT, &counts);
 #endif
   }
-  ~SerialPort() {
-    // The exclusive mode would outlive us on some ports
-    ioctl(fd, TIOCNXCL);
-    close(fd);
-  }
+  ~SerialPort() { close(fd); }
 
   bool init(const DeviceLinkTarget& t, std::string* error) {
     struct termios tio;
@@ -756,9 +752,9 @@ static DeviceLinkPort* openSerial(const DeviceLinkTarget& t,
     *error = lastError();
     return nullptr;
   }
+  // No TIOCEXCL: the viewers coordinate with the lock file, and the
+  // exclusive mode would outlive a viewer that is killed
   fcntl(fd, F_SETFD, FD_CLOEXEC);
-  // Like the exclusive access Windows gives
-  ioctl(fd, TIOCEXCL);
 
   SerialPort* port = new SerialPort(fd);
   if (!port->init(t, error)) {
@@ -1099,6 +1095,17 @@ DeviceLinkLock::~DeviceLinkLock()
   CloseHandle((HANDLE)handle);
 }
 
+void DeviceLinkLock::setInfo(const std::string& info)
+{
+  DWORD n;
+  LARGE_INTEGER zero;
+  zero.QuadPart = 0;
+  SetFilePointerEx((HANDLE)handle, zero, nullptr, FILE_BEGIN);
+  SetEndOfFile((HANDLE)handle);
+  WriteFile((HANDLE)handle, info.data(), info.size(), &n, nullptr);
+  FlushFileBuffers((HANDLE)handle);
+}
+
 #else
 
 DeviceLinkLock* DeviceLinkLock::tryLock(const DeviceLinkTarget& target,
@@ -1133,6 +1140,14 @@ DeviceLinkLock::~DeviceLinkLock()
 {
   // Unlocks
   close(fd);
+}
+
+void DeviceLinkLock::setInfo(const std::string& info)
+{
+  if (ftruncate(fd, 0) == 0 &&
+      pwrite(fd, info.data(), info.size(), 0) < 0) {
+    // Only for other viewers, which retry
+  }
 }
 
 #endif

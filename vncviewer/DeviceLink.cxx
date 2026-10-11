@@ -47,6 +47,7 @@
 #include "CConn.h"
 #include "DeviceLink.h"
 #include "DeviceLinkProfile.h"
+#include "DeviceLinkShare.h"
 #include "parameters.h"
 
 using namespace rfb;
@@ -62,53 +63,22 @@ static std::set<DeviceLink*> instances;
 static std::set<std::string> confirmed;
 
 struct DeviceLink::Channel {
-  Channel() : kind(0), state(Asking), fixed(false), wait(false),
-              waitSeconds(0), deviceLock(nullptr), stopping(false),
-              port(nullptr), openDone(false), gone(false),
-              window(deviceLinkWindow), written(0), linesKnown(false),
-              lines(0), errors(0), lineChanged(false) {}
+  Channel() : kind(0), state(Asking), share(nullptr),
+              window(deviceLinkWindow) {}
 
   uint16_t id;
   uint8_t kind;
   std::string name;
   std::string label;
-  enum { Asking, Waiting, Opening, Open, Closing } state;
-  bool fixed;
+  enum { Asking, Opening, Open, Closing } state;
   DeviceLinkTarget target;
 
-  // Waiting for a device another session uses
-  bool wait;
-  unsigned waitSeconds;
-  std::chrono::steady_clock::time_point waitUntil;
-  DeviceLinkLock* deviceLock;
+  // The local device, maybe shared with other sessions
+  DeviceLinkShare* share;
 
-  std::thread reader, writer;
-  std::mutex lock;
-  std::condition_variable cond;
-  std::atomic<bool> stopping;
-
-  // The rest is shared with the threads, under lock
-  DeviceLinkPort* port;
-  bool openDone;
-  std::string openError;
-  bool gone;
-  std::string goneError;
-
-  // From the device, to be sent; and what the server lets us send
+  // From the device, not yet sent; and what the server lets us send
   std::string fromDevice;
   uint32_t window;
-  // Written to the device since the last Credit
-  uint32_t written;
-
-  bool linesKnown;
-  uint8_t lines, errors;
-  bool lineChanged;
-
-  struct Op {
-    uint8_t subtype;
-    std::string data;
-  };
-  std::deque<Op> ops;
 };
 
 static const char* kindName(uint8_t kind)
@@ -188,22 +158,46 @@ void DeviceLink::handleMessage(uint8_t subtype, uint16_t id,
     return;
   Channel* channel = it->second;
 
+  std::string payload((const char*)data, len);
+  bool open = channel->state == Channel::Open;
+
   switch (subtype) {
   case deviceLinkData:
+    if (open)
+      channel->share->write(payload);
+    break;
   case deviceLinkSetParams:
+    if (open)
+      channel->share->setParams(payload);
+    break;
   case deviceLinkSetLines:
+    if (open)
+      channel->share->setLines(payload);
+    break;
   case deviceLinkPurge:
-    if (channel->state == Channel::Open)
-      queueOp(channel, subtype, data, len);
+    if (open && len >= 1)
+      channel->share->purge(data[0]);
+    break;
+  case deviceLinkLock:
+    if (open && len >= 3) {
+      int seconds = (data[1] << 8) | data[2];
+      channel->share->lock(data[0] & deviceLinkLockWait ? seconds : -1);
+    } else if (len >= 3) {
+      uint8_t msg[3] = { deviceLinkUnavailable, 0, 0 };
+      send(deviceLinkLockResult, channel->id, msg, sizeof(msg));
+    }
+    break;
+  case deviceLinkUnlock:
+    if (open)
+      channel->share->unlock();
     break;
   case deviceLinkCredit:
     if (len >= 4) {
       uint32_t credit = ((uint32_t)data[0] << 24) | (data[1] << 16) |
                         (data[2] << 8) | data[3];
-      std::lock_guard<std::mutex> l(channel->lock);
       channel->window = std::min<uint64_t>((uint64_t)channel->window + credit,
                                            deviceLinkWindow);
-      channel->cond.notify_all();
+      sendFromDevice(channel);
     }
     break;
   case deviceLinkClose:
@@ -233,11 +227,6 @@ void DeviceLink::handleRequest(uint16_t id, const uint8_t* data,
     channel->label.assign((const char*)data + 3 + data[1], labelLen);
   if (channel->label.empty())
     channel->label = channel->name;
-  size_t flags = 3 + data[1] + labelLen;
-  if (flags + 3 <= len) {
-    channel->wait = data[flags] & deviceLinkRequestWait;
-    channel->waitSeconds = (data[flags + 1] << 8) | data[flags + 2];
-  }
   channels[id] = channel;
 
   // Asking the user runs a nested event loop, which must not happen
@@ -256,14 +245,6 @@ void DeviceLink::handleClose(Channel* channel)
   }
   stop(channel);
   erase(channel);
-}
-
-void DeviceLink::queueOp(Channel* channel, uint8_t subtype,
-                         const uint8_t* data, size_t len)
-{
-  std::lock_guard<std::mutex> l(channel->lock);
-  channel->ops.push_back({subtype, std::string((const char*)data, len)});
-  channel->cond.notify_all();
 }
 
 // -=- Asking the user
@@ -464,7 +445,7 @@ void DeviceLink::handleQuestions(void* data)
     }
 
     if (decision == Yes) {
-      self->acquire(it->second, target);
+      self->start(it->second, target);
     } else {
       vlog.info(_("Device \"%s\" not given to the remote desktop: %s"),
                 it->second->name.c_str(), message.c_str());
@@ -588,184 +569,14 @@ DeviceLink::Decision DeviceLink::askUser(Channel* channel,
 
 // -=- The threads
 
-// Takes the device from the other viewers on this computer, or waits for
-// it if the request says so
-void DeviceLink::acquire(Channel* channel, const DeviceLinkTarget& target)
-{
-  std::string holder;
-
-  channel->target = target;
-
-  // Files may be read by everybody
-  if (target.kind != deviceLinkTail) {
-    channel->deviceLock = DeviceLinkLock::tryLock(target, cc->getServerName(),
-                                            &holder);
-    if (channel->deviceLock == nullptr) {
-      std::string message(holder.empty() ?
-                          core::format(_("%s is in use by another session"),
-                                       target.where.c_str()) :
-                          core::format(_("%s is in use by %s"),
-                                       target.where.c_str(),
-                                       holder.c_str()));
-      if (!channel->wait) {
-        vlog.info("%s", message.c_str());
-        result(channel->id, deviceLinkBusy, message);
-        erase(channel);
-        return;
-      }
-      if (channel->state != Channel::Waiting) {
-        vlog.info(_("Waiting: %s"), message.c_str());
-        channel->state = Channel::Waiting;
-        channel->waitUntil = std::chrono::steady_clock::now() +
-                             std::chrono::seconds(channel->waitSeconds);
-        if (!Fl::has_timeout(handlePoll, this))
-          Fl::add_timeout(pollInterval, handlePoll, this);
-      }
-      if (channel->waitSeconds &&
-          std::chrono::steady_clock::now() > channel->waitUntil) {
-        result(channel->id, deviceLinkBusy, message);
-        erase(channel);
-      }
-      return;
-    }
-  }
-
-  start(channel, target);
-}
-
 void DeviceLink::start(Channel* channel, const DeviceLinkTarget& target)
 {
   channel->target = target;
-  channel->fixed = target.fixed;
   channel->state = Channel::Opening;
-  channel->reader = std::thread(readLoop, channel);
-  channel->writer = std::thread(writeLoop, channel);
+  channel->share = DeviceLinkShare::attach(target, cc->getServerName());
 
   if (!Fl::has_timeout(handlePoll, this))
     Fl::add_timeout(pollInterval, handlePoll, this);
-}
-
-void DeviceLink::readLoop(Channel* channel)
-{
-  std::string error;
-  DeviceLinkPort* port = DeviceLinkPort::open(channel->target, &error);
-
-  {
-    std::lock_guard<std::mutex> l(channel->lock);
-    channel->port = port;
-    channel->openDone = true;
-    channel->openError = error;
-    channel->cond.notify_all();
-  }
-  if (port == nullptr)
-    return;
-
-  uint8_t buf[deviceLinkMaxData];
-  while (!channel->stopping) {
-    size_t want;
-    {
-      std::unique_lock<std::mutex> l(channel->lock);
-      want = std::min<size_t>(channel->window, sizeof(buf));
-    }
-
-    int n = 0;
-    if (want > 0) {
-      n = port->read(buf, want, &error);
-    } else {
-      std::unique_lock<std::mutex> l(channel->lock);
-      channel->cond.wait_for(l, std::chrono::milliseconds(100), [&] {
-        return channel->stopping || channel->window > 0;
-      });
-    }
-
-    uint8_t lines, errors;
-    bool haveLines = port->lineState(&lines, &errors);
-
-    std::lock_guard<std::mutex> l(channel->lock);
-    if (n < 0) {
-      channel->gone = true;
-      channel->goneError = error;
-      return;
-    }
-    if (n > 0) {
-      channel->fromDevice.append((const char*)buf, n);
-      channel->window -= n;
-    }
-    if (haveLines && (!channel->linesKnown || lines != channel->lines ||
-                      errors)) {
-      channel->linesKnown = true;
-      channel->lines = lines;
-      channel->errors |= errors;
-      channel->lineChanged = true;
-    }
-  }
-}
-
-void DeviceLink::writeLoop(Channel* channel)
-{
-  DeviceLinkPort* port;
-
-  {
-    std::unique_lock<std::mutex> l(channel->lock);
-    channel->cond.wait(l, [&] {
-      return channel->stopping || channel->openDone;
-    });
-    port = channel->port;
-  }
-  if (port == nullptr)
-    return;
-
-  while (true) {
-    Channel::Op op;
-    {
-      std::unique_lock<std::mutex> l(channel->lock);
-      channel->cond.wait(l, [&] {
-        return channel->stopping || !channel->ops.empty();
-      });
-      if (channel->stopping)
-        return;
-      op = channel->ops.front();
-      channel->ops.pop_front();
-    }
-
-    const uint8_t* d = (const uint8_t*)op.data.data();
-    size_t len = op.data.size();
-    std::string error;
-
-    switch (op.subtype) {
-    case deviceLinkData:
-      if (!port->write(d, len, channel->stopping, &error)) {
-        std::lock_guard<std::mutex> l(channel->lock);
-        channel->gone = true;
-        channel->goneError = error;
-        return;
-      } else {
-        std::lock_guard<std::mutex> l(channel->lock);
-        channel->written += len;
-      }
-      break;
-    case deviceLinkSetParams:
-      if (len >= 9 && !channel->fixed) {
-        uint32_t speed = ((uint32_t)d[1] << 24) | (d[2] << 16) |
-                         (d[3] << 8) | d[4];
-        port->setParams(d[0], speed, d[5], d[6], d[7], d[8]);
-      }
-      break;
-    case deviceLinkSetLines:
-      if (len >= 4) {
-        if (d[0] && !channel->fixed)
-          port->setLines(d[0], d[1]);
-        unsigned ms = (d[2] << 8) | d[3];
-        if (ms)
-          port->sendBreak(ms);
-      }
-      break;
-    case deviceLinkPurge:
-      if (len >= 1)
-        port->purge(d[0]);
-      break;
-    }
-  }
 }
 
 void DeviceLink::handlePoll(void* data)
@@ -775,8 +586,7 @@ void DeviceLink::handlePoll(void* data)
 
   bool active = false;
   for (auto& entry : self->channels) {
-    if (entry.second->state == Channel::Waiting ||
-        entry.second->state == Channel::Opening ||
+    if (entry.second->state == Channel::Opening ||
         entry.second->state == Channel::Open)
       active = true;
   }
@@ -791,53 +601,25 @@ void DeviceLink::poll()
     all.push_back(entry.second);
 
   for (Channel* channel : all) {
-    if (channel->state == Channel::Waiting) {
-      // About four times a second is enough to take a free card reader
-      static int skip = 0;
-      if (++skip % 12 == 0)
-        acquire(channel, channel->target);
+    if (channel->share == nullptr ||
+        (channel->state != Channel::Opening &&
+         channel->state != Channel::Open))
       continue;
-    }
 
-    std::string fromDevice;
-    uint32_t written;
-    bool lineChanged, gone, opened = false, failed = false;
-    uint8_t lines, errors;
-    std::string error;
+    DeviceLinkShare::Events e(channel->share->take());
 
-    {
-      std::lock_guard<std::mutex> l(channel->lock);
-      if (channel->state == Channel::Opening && channel->openDone) {
-        opened = channel->port != nullptr;
-        failed = !opened;
-        error = channel->openError;
-      }
-      fromDevice.swap(channel->fromDevice);
-      written = channel->written;
-      channel->written = 0;
-      lineChanged = channel->lineChanged;
-      channel->lineChanged = false;
-      lines = channel->lines;
-      errors = channel->errors;
-      channel->errors = 0;
-      gone = channel->gone;
-      if (gone)
-        error = channel->goneError;
-    }
-
-    if (failed) {
+    if (e.failed) {
       vlog.error(_("Could not open %s for \"%s\": %s"),
                  channel->target.where.c_str(), channel->name.c_str(),
-                 error.c_str());
+                 e.error.c_str());
       cc->deviceLinkMessage(core::format(_("Could not open %s: %s"),
                                          channel->target.where.c_str(),
-                                         error.c_str()).c_str());
-      result(channel->id, deviceLinkUnavailable, error);
-      stop(channel);
+                                         e.error.c_str()).c_str());
+      result(channel->id, deviceLinkUnavailable, e.error);
       erase(channel);
       continue;
     }
-    if (opened) {
+    if (e.opened && channel->state == Channel::Opening) {
       vlog.info(_("Device \"%s\" is %s"), channel->name.c_str(),
                 channel->target.toString().c_str());
       result(channel->id, rfb::deviceLinkOpen, "");
@@ -846,27 +628,39 @@ void DeviceLink::poll()
     if (channel->state != Channel::Open)
       continue;
 
-    for (size_t pos = 0; pos < fromDevice.size(); pos += deviceLinkMaxData) {
-      size_t n = std::min(fromDevice.size() - pos, deviceLinkMaxData);
-      send(deviceLinkData, channel->id,
-           (const uint8_t*)fromDevice.data() + pos, n);
+    if (!e.data.empty()) {
+      if (channel->fromDevice.size() + e.data.size() > 1024 * 1024)
+        vlog.error(_("Dropping data of \"%s\" the server does not take"),
+                   channel->name.c_str());
+      else
+        channel->fromDevice += e.data;
+      sendFromDevice(channel);
     }
-    if (written) {
-      uint8_t credit[4] = { (uint8_t)(written >> 24),
-                            (uint8_t)(written >> 16),
-                            (uint8_t)(written >> 8), (uint8_t)written };
+    if (e.written) {
+      uint8_t credit[4] = { (uint8_t)(e.written >> 24),
+                            (uint8_t)(e.written >> 16),
+                            (uint8_t)(e.written >> 8), (uint8_t)e.written };
       send(deviceLinkCredit, channel->id, credit, sizeof(credit));
     }
-    if (lineChanged) {
-      uint8_t state[2] = { lines, errors };
+    if (e.lineChanged) {
+      uint8_t state[2] = { e.lines, e.errors };
       send(deviceLinkLineState, channel->id, state, sizeof(state));
     }
-    if (gone) {
+    if (e.lockResult >= 0) {
+      std::string m(e.lockMessage.substr(0, deviceLinkMaxPayload - 3));
+      std::vector<uint8_t> msg;
+      msg.push_back(e.lockResult);
+      msg.push_back(m.size() >> 8);
+      msg.push_back(m.size());
+      msg.insert(msg.end(), m.begin(), m.end());
+      send(deviceLinkLockResult, channel->id, msg.data(), msg.size());
+    }
+    if (e.gone) {
       vlog.error(_("Device \"%s\" is gone: %s"), channel->name.c_str(),
-                 error.c_str());
+                 e.error.c_str());
       cc->deviceLinkMessage(core::format(_("%s is gone: %s"),
                                          channel->target.where.c_str(),
-                                         error.c_str()).c_str());
+                                         e.error.c_str()).c_str());
       uint8_t reason = deviceLinkCloseError;
       send(deviceLinkClose, channel->id, &reason, 1);
       channel->state = Channel::Closing;
@@ -875,24 +669,33 @@ void DeviceLink::poll()
   }
 }
 
+// Sends what the device said, as far as the server lets us
+void DeviceLink::sendFromDevice(Channel* channel)
+{
+  while (!channel->fromDevice.empty() && channel->window > 0) {
+    size_t n = std::min<size_t>({ channel->fromDevice.size(),
+                                  deviceLinkMaxData, channel->window });
+    send(deviceLinkData, channel->id,
+         (const uint8_t*)channel->fromDevice.data(), n);
+    channel->fromDevice.erase(0, n);
+    channel->window -= n;
+  }
+}
+
+void DeviceLink::setFocus(bool focused)
+{
+  DeviceLinkShare::setFocus(focused);
+}
+
 void DeviceLink::stop(Channel* channel)
 {
-  {
-    std::lock_guard<std::mutex> l(channel->lock);
-    channel->stopping = true;
-    channel->cond.notify_all();
-  }
-  if (channel->reader.joinable())
-    channel->reader.join();
-  if (channel->writer.joinable())
-    channel->writer.join();
-  delete channel->port;
-  channel->port = nullptr;
+  delete channel->share;
+  channel->share = nullptr;
 }
 
 void DeviceLink::erase(Channel* channel)
 {
-  delete channel->deviceLock;
+  stop(channel);
   channels.erase(channel->id);
   delete channel;
 }
