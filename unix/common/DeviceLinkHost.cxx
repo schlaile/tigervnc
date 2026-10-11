@@ -58,7 +58,8 @@ struct DeviceLinkHost::Control {
 
 struct DeviceLinkHost::Device {
   Device()
-    : kind(0), control(nullptr), channel(0), state(Pending),
+    : kind(0), control(nullptr), releasedBy(nullptr), channel(0),
+      state(Pending),
       ptyFd(-1), slaveFd(-1), listenFd(-1), connFd(-1),
       sendWindow(deviceLinkWindow),
       termSpeed(0), termFlow(deviceLinkFlowNone),
@@ -70,6 +71,8 @@ struct DeviceLinkHost::Device {
   uint8_t kind;
   // nullptr once the application has released the device
   Control* control;
+  // Waits for "ok NAME" once the viewer has closed the device
+  Control* releasedBy;
   uint16_t channel;
   enum { Pending, Open, Closing } state;
 
@@ -348,7 +351,11 @@ void DeviceLinkHost::closeControl(Control* control)
       names.push_back(entry.first);
   }
   for (const std::string& name : names)
-    release(control, name);
+    release(control, name, false);
+  for (auto& entry : channels) {
+    if (entry.second->releasedBy == control)
+      entry.second->releasedBy = nullptr;
+  }
 
   watcher->unwatchFd(control->fd);
   close(control->fd);
@@ -380,10 +387,28 @@ void DeviceLinkHost::handleCommand(Control* control,
     return;
 
   if (command == "request") {
+    // request NAME KIND [wait[=SECONDS]] LABEL
     std::string kind, label;
+    int wait = -1;
     in >> kind;
     std::getline(in >> std::ws, label);
-    request(control, name, kind, label);
+    if (label == "wait" || label.compare(0, 5, "wait ") == 0 ||
+        label.compare(0, 5, "wait=") == 0) {
+      std::string option(label.substr(0, label.find(' ')));
+      size_t rest = label.find_first_not_of(' ', option.size());
+      label = rest == std::string::npos ? "" : label.substr(rest);
+      wait = 0;
+      if (option.size() > 5) {
+        char* end;
+        unsigned long seconds = strtoul(option.c_str() + 5, &end, 10);
+        if (*end != '\0' || seconds > 65535) {
+          reply(control, "error " + name + " invalid wait");
+          return;
+        }
+        wait = seconds;
+      }
+    }
+    request(control, name, kind, label, wait);
     return;
   }
 
@@ -393,8 +418,9 @@ void DeviceLinkHost::handleCommand(Control* control,
       reply(control, "error " + name + " not-requested");
       return;
     }
-    release(control, name);
-    reply(control, "ok " + name);
+    // "ok" once the viewer has closed it, so that the device is free
+    // for other sessions when the application hears about it
+    release(control, name, true);
     return;
   }
 
@@ -510,7 +536,7 @@ DeviceLinkHost::Device* DeviceLinkHost::serialFor(Control* control,
 
 void DeviceLinkHost::request(Control* control, const std::string& name,
                              const std::string& kindName,
-                             const std::string& label)
+                             const std::string& label, int wait)
 {
   uint8_t kind;
 
@@ -560,10 +586,15 @@ void DeviceLinkHost::request(Control* control, const std::string& name,
   msg.insert(msg.end(), name.begin(), name.end());
   msg.push_back(device->label.size());
   msg.insert(msg.end(), device->label.begin(), device->label.end());
+  // The viewer waits for a device that another session uses
+  msg.push_back(wait >= 0 ? deviceLinkRequestWait : 0);
+  msg.push_back((wait > 0 ? wait : 0) >> 8);
+  msg.push_back(wait > 0 ? wait : 0);
   send(deviceLinkRequest, device->channel, msg.data(), msg.size());
 }
 
-void DeviceLinkHost::release(Control* /*control*/, const std::string& name)
+void DeviceLinkHost::release(Control* control, const std::string& name,
+                             bool ack)
 {
   auto it = devices.find(name);
   if (it == devices.end())
@@ -572,6 +603,8 @@ void DeviceLinkHost::release(Control* /*control*/, const std::string& name)
   Device* device = it->second;
   devices.erase(it);
   device->control = nullptr;
+  if (ack)
+    device->releasedBy = control;
   closeEndpoint(device);
 
   if (!ownerPresent) {
@@ -861,6 +894,9 @@ void DeviceLinkHost::lose(Device* device, const std::string& event,
 
 void DeviceLinkHost::finish(Device* device)
 {
+  if (device->releasedBy != nullptr)
+    reply(device->releasedBy, "ok " + device->name);
+
   if (device->control != nullptr)
     devices.erase(device->name);
   closeEndpoint(device);

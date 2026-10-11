@@ -62,7 +62,8 @@ static std::set<DeviceLink*> instances;
 static std::set<std::string> confirmed;
 
 struct DeviceLink::Channel {
-  Channel() : kind(0), state(Asking), fixed(false), stopping(false),
+  Channel() : kind(0), state(Asking), fixed(false), wait(false),
+              waitSeconds(0), deviceLock(nullptr), stopping(false),
               port(nullptr), openDone(false), gone(false),
               window(deviceLinkWindow), written(0), linesKnown(false),
               lines(0), errors(0), lineChanged(false) {}
@@ -71,9 +72,15 @@ struct DeviceLink::Channel {
   uint8_t kind;
   std::string name;
   std::string label;
-  enum { Asking, Opening, Open, Closing } state;
+  enum { Asking, Waiting, Opening, Open, Closing } state;
   bool fixed;
   DeviceLinkTarget target;
+
+  // Waiting for a device another session uses
+  bool wait;
+  unsigned waitSeconds;
+  std::chrono::steady_clock::time_point waitUntil;
+  DeviceLinkLock* deviceLock;
 
   std::thread reader, writer;
   std::mutex lock;
@@ -226,6 +233,11 @@ void DeviceLink::handleRequest(uint16_t id, const uint8_t* data,
     channel->label.assign((const char*)data + 3 + data[1], labelLen);
   if (channel->label.empty())
     channel->label = channel->name;
+  size_t flags = 3 + data[1] + labelLen;
+  if (flags + 3 <= len) {
+    channel->wait = data[flags] & deviceLinkRequestWait;
+    channel->waitSeconds = (data[flags + 1] << 8) | data[flags + 2];
+  }
   channels[id] = channel;
 
   // Asking the user runs a nested event loop, which must not happen
@@ -452,7 +464,7 @@ void DeviceLink::handleQuestions(void* data)
     }
 
     if (decision == Yes) {
-      self->start(it->second, target);
+      self->acquire(it->second, target);
     } else {
       vlog.info(_("Device \"%s\" not given to the remote desktop: %s"),
                 it->second->name.c_str(), message.c_str());
@@ -575,6 +587,51 @@ DeviceLink::Decision DeviceLink::askUser(Channel* channel,
 }
 
 // -=- The threads
+
+// Takes the device from the other viewers on this computer, or waits for
+// it if the request says so
+void DeviceLink::acquire(Channel* channel, const DeviceLinkTarget& target)
+{
+  std::string holder;
+
+  channel->target = target;
+
+  // Files may be read by everybody
+  if (target.kind != deviceLinkTail) {
+    channel->deviceLock = DeviceLinkLock::tryLock(target, cc->getServerName(),
+                                            &holder);
+    if (channel->deviceLock == nullptr) {
+      std::string message(holder.empty() ?
+                          core::format(_("%s is in use by another session"),
+                                       target.where.c_str()) :
+                          core::format(_("%s is in use by %s"),
+                                       target.where.c_str(),
+                                       holder.c_str()));
+      if (!channel->wait) {
+        vlog.info("%s", message.c_str());
+        result(channel->id, deviceLinkBusy, message);
+        erase(channel);
+        return;
+      }
+      if (channel->state != Channel::Waiting) {
+        vlog.info(_("Waiting: %s"), message.c_str());
+        channel->state = Channel::Waiting;
+        channel->waitUntil = std::chrono::steady_clock::now() +
+                             std::chrono::seconds(channel->waitSeconds);
+        if (!Fl::has_timeout(handlePoll, this))
+          Fl::add_timeout(pollInterval, handlePoll, this);
+      }
+      if (channel->waitSeconds &&
+          std::chrono::steady_clock::now() > channel->waitUntil) {
+        result(channel->id, deviceLinkBusy, message);
+        erase(channel);
+      }
+      return;
+    }
+  }
+
+  start(channel, target);
+}
 
 void DeviceLink::start(Channel* channel, const DeviceLinkTarget& target)
 {
@@ -718,7 +775,8 @@ void DeviceLink::handlePoll(void* data)
 
   bool active = false;
   for (auto& entry : self->channels) {
-    if (entry.second->state == Channel::Opening ||
+    if (entry.second->state == Channel::Waiting ||
+        entry.second->state == Channel::Opening ||
         entry.second->state == Channel::Open)
       active = true;
   }
@@ -733,6 +791,14 @@ void DeviceLink::poll()
     all.push_back(entry.second);
 
   for (Channel* channel : all) {
+    if (channel->state == Channel::Waiting) {
+      // About four times a second is enough to take a free card reader
+      static int skip = 0;
+      if (++skip % 12 == 0)
+        acquire(channel, channel->target);
+      continue;
+    }
+
     std::string fromDevice;
     uint32_t written;
     bool lineChanged, gone, opened = false, failed = false;
@@ -826,6 +892,7 @@ void DeviceLink::stop(Channel* channel)
 
 void DeviceLink::erase(Channel* channel)
 {
+  delete channel->deviceLock;
   channels.erase(channel->id);
   delete channel;
 }

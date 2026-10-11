@@ -98,4 +98,26 @@ public:
   static std::vector<std::string> serialPorts();
 };
 
+// A lock on a local device that all viewers on this computer respect, so
+// that two sessions do not use one card reader at the same time. It goes
+// away with the viewer, even if the viewer crashes.
+class DeviceLinkLock {
+public:
+  // nullptr if another viewer holds the device; *holder then says which
+  // session, as far as known
+  static DeviceLinkLock* tryLock(const DeviceLinkTarget& target,
+                                 const std::string& session,
+                                 std::string* holder);
+  ~DeviceLinkLock();
+
+private:
+#ifdef WIN32
+  DeviceLinkLock(void* handle_) : handle(handle_) {}
+  void* handle;
+#else
+  DeviceLinkLock(int fd_) : fd(fd_) {}
+  int fd;
+#endif
+};
+
 #endif

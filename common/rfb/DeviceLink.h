@@ -45,6 +45,9 @@ namespace rfb {
   const uint8_t deviceLinkTCP = 2;
   const uint8_t deviceLinkTail = 3;
 
+  // Request flags
+  const uint8_t deviceLinkRequestWait = 1 << 0;
+
   // RequestResult status
   const uint8_t deviceLinkOpen = 0;
   const uint8_t deviceLinkRefused = 1;

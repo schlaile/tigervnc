@@ -76,9 +76,12 @@ private:
   void closeControl(Control* control);
 
   // Commands
+  // wait: -1 no, 0 until released, else seconds
   void request(Control* control, const std::string& name,
-               const std::string& kind, const std::string& label);
-  void release(Control* control, const std::string& name);
+               const std::string& kind, const std::string& label,
+               int wait);
+  // ack: answer "ok NAME" on control once the viewer has closed it
+  void release(Control* control, const std::string& name, bool ack);
   Device* serialFor(Control* control, const std::string& name);
 
   // Devices

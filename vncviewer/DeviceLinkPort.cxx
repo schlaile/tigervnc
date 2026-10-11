@@ -40,6 +40,7 @@
 #include <netinet/tcp.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #ifdef __linux__
 #include <linux/serial.h>
@@ -53,6 +54,7 @@
 
 #include <core/i18n.h>
 #include <core/string.h>
+#include <core/xdgdirs.h>
 
 #include <rfb/DeviceLink.h>
 
@@ -1021,3 +1023,116 @@ DeviceLinkPort* DeviceLinkPort::open(const DeviceLinkTarget& target,
   *error = _("Unknown kind of device");
   return nullptr;
 }
+
+// -=- DeviceLinkLock
+
+// The lock file of a device: the same for all names and profiles that
+// lead to it
+static std::string lockPath(const DeviceLinkTarget& target)
+{
+  const char* dir = core::getvncstatedir();
+  std::string key(std::to_string(target.kind) + ":" + target.where);
+  uint64_t hash = 14695981039346656037ULL;
+
+  if (dir == nullptr)
+    return "";
+
+#ifdef WIN32
+  // COM3 and com3 are the same port
+  for (char& c : key)
+    c = tolower((unsigned char)c);
+#endif
+  for (char c : key) {
+    hash ^= (unsigned char)c;
+    hash *= 1099511628211ULL;
+  }
+
+  std::string locks(std::string(dir) + "/device-locks");
+#ifdef WIN32
+  CreateDirectoryW(widen(dir).c_str(), nullptr);
+  CreateDirectoryW(widen(locks).c_str(), nullptr);
+#else
+  mkdir(dir, 0700);
+  mkdir(locks.c_str(), 0700);
+#endif
+  return locks + "/" + core::format("%016llx", (unsigned long long)hash) +
+         ".lock";
+}
+
+#ifdef WIN32
+
+DeviceLinkLock* DeviceLinkLock::tryLock(const DeviceLinkTarget& target,
+                                        const std::string& session,
+                                        std::string* holder)
+{
+  std::string path(lockPath(target));
+  if (path.empty())
+    return nullptr;
+
+  // Only one process can have the file open for writing; others may
+  // read who has it
+  HANDLE h = CreateFileW(widen(path).c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+                         nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h == INVALID_HANDLE_VALUE) {
+    HANDLE r = CreateFileW(widen(path).c_str(), GENERIC_READ,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (r != INVALID_HANDLE_VALUE) {
+      char buf[256];
+      DWORD n = 0;
+      if (ReadFile(r, buf, sizeof(buf) - 1, &n, nullptr))
+        holder->assign(buf, n);
+      CloseHandle(r);
+    }
+    return nullptr;
+  }
+
+  DWORD n;
+  SetEndOfFile(h);
+  WriteFile(h, session.data(), session.size(), &n, nullptr);
+  FlushFileBuffers(h);
+  return new DeviceLinkLock(h);
+}
+
+DeviceLinkLock::~DeviceLinkLock()
+{
+  CloseHandle((HANDLE)handle);
+}
+
+#else
+
+DeviceLinkLock* DeviceLinkLock::tryLock(const DeviceLinkTarget& target,
+                                        const std::string& session,
+                                        std::string* holder)
+{
+  std::string path(lockPath(target));
+  if (path.empty())
+    return nullptr;
+
+  int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+  if (fd < 0)
+    return nullptr;
+
+  if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    char buf[256];
+    ssize_t n = pread(fd, buf, sizeof(buf) - 1, 0);
+    if (n > 0)
+      holder->assign(buf, n);
+    close(fd);
+    return nullptr;
+  }
+
+  if (ftruncate(fd, 0) == 0 &&
+      pwrite(fd, session.data(), session.size(), 0) < 0) {
+    // Who has it is only for messages
+  }
+  return new DeviceLinkLock(fd);
+}
+
+DeviceLinkLock::~DeviceLinkLock()
+{
+  // Unlocks
+  close(fd);
+}
+
+#endif
