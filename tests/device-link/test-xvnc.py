@@ -149,7 +149,8 @@ def run(port, devdir):
     app.cmd("request display serial Kundendisplay")
     sub, chan, payload = viewer.expect(REQUEST)
     check(payload == bytes([1, 7]) + b"display" + bytes([13]) +
-          b"Kundendisplay", "request carries kind, name, label")
+          b"Kundendisplay" + bytes([0, 0, 0]),
+          "request carries kind, name, label, no waiting")
     display = chan
     viewer.send(REQUEST_RESULT, display, bytes([0, 0, 0]))
     reply = app.line()
@@ -282,12 +283,21 @@ def run(port, devdir):
     check(app2.line() == "error display not-open", "foreign device")
 
     # -- release
+    # (Xvnc confirms once the viewer has closed the device)
     app.cmd("release display")
-    check(app.line() == "ok display", "release")
     sub, chan, payload = viewer.expect(CLOSE)
     check(chan == display, "close sent for released device")
     check(not os.path.lexists(path), "path removed")
     viewer.send(CLOSE, display, bytes([0]))
+    check(app.line() == "ok display", "release confirmed after the viewer")
+
+    # -- waiting is passed on to the viewer
+    app.cmd("request scanner serial wait=30 Scanner")
+    sub, chan, payload = viewer.expect(REQUEST)
+    check(payload.endswith(b"Scanner" + bytes([1, 0, 30])),
+          "wait=30 reaches the viewer")
+    viewer.send(REQUEST_RESULT, chan, bytes([3, 0, 4]) + b"busy")
+    check(app.line() == "error scanner busy busy", "busy after waiting")
 
     # -- viewer closes a device
     viewer.send(CLOSE, cts, bytes([1]))

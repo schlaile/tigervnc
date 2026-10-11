@@ -120,7 +120,7 @@ bytes, other payloads at most 1024.
 | Subtype | Direction | Name | Payload |
 |---|---|---|---|
 | 0 | S→C | `Hello` | U8 version (1), U8 flags (0), U16 maximum number of open channels |
-| 1 | S→C | `Request` | U8 kind, U8 name-length, name, U8 label-length, label (UTF-8) |
+| 1 | S→C | `Request` | U8 kind, U8 name-length, name, U8 label-length, label (UTF-8), U8 flags, U16 wait seconds |
 | 2 | C→S | `RequestResult` | U8 status, U16 message-length, message (UTF-8) |
 | 3 | both | `Data` | bytes |
 | 4 | both | `Credit` | U32 additional bytes the sender may send on *channel* |
@@ -129,6 +129,11 @@ bytes, other payloads at most 1024.
 | 7 | C→S | `LineState` | U8 lines, U8 errors |
 | 8 | S→C | `Purge` | U8 which (1 receive, 2 transmit, 3 both) |
 | 9 | both | `Close` | U8 reason |
+
+`Request` flags: bit 0 *wait*: if another session on the viewer's computer
+uses the device, the viewer answers only when it is free, after at most the
+given number of seconds (0: until the server sends `Close`), instead of
+answering `busy` at once.
 
 Kind: 1 `serial`, 2 `tcp`, 3 `tail`. Names are 1 to 32 characters of
 `[a-z0-9_-]`; the label is shown to the user ("Customer display").
@@ -184,9 +189,15 @@ no-viewer`; the application requests again after `viewer present`. Other
 errors are `refused`, `unavailable`, `busy`, `not-configured` (each followed by
 the viewer's message, if any), `too-many`, `invalid` and `closed`.
 
+With `request NAME KIND wait[=SECONDS] LABEL` the viewer waits while
+another session uses the device (see [Sharing a device between
+sessions](#sharing-a-device-between-sessions)).
+
 The path is a symbolic link to the terminal device (`serial`) or a Unix
 socket (`tcp`, `tail`). It stays valid while the control connection is open;
-closing the connection, or `release NAME`, releases the device. Xvnc reports
+closing the connection, or `release NAME`, releases the device. Xvnc answers
+`release` with `ok NAME` only after the viewer has closed the device, so that
+it is free for other sessions at that moment. Xvnc reports
 later changes on the same connection: `lost NAME` when the viewer closes the
 channel, for example because the adapter was unplugged or the viewer
 disconnected. An application that keeps the control connection open can thus
@@ -194,6 +205,19 @@ request its devices once at start and request them again after `lost`.
 
 A WWS-style application therefore needs one line per device at start and
 then opens a path, as it would open `/dev/ttyS0` or connect to a socket.
+Programs that cannot speak to the control socket are run with
+`contrib/device-link/vnc-device`, which requests the device, runs the
+program with `{}` replaced by the path, and releases the device when the
+program ends:
+
+```
+vnc-device cardreader serial --label Kartenleser --wait -- \
+    perl rs2000_33w.pl {} rtscts
+```
+
+The card reader driver above initialises its port with `stty speed 9600
+... crtscts`; the speed and the flow control reach the viewer through the
+pseudo terminal, so the driver works unchanged.
 
 ### Serial devices as terminals
 
@@ -243,6 +267,21 @@ Several viewers may share a session. The devices belong to one viewer, the
 *owner*: the first viewer that is not view-only and supports this extension.
 When it disconnects, all channels close (`lost`), and the next qualifying
 viewer becomes the owner; applications request their devices again.
+
+### Sharing a device between sessions
+
+Two sessions may each have a viewer on the same computer, for example two
+point-of-sale desktops side by side with one card reader. A device is then
+held only between `request` and `release`: the session that is closing a sale
+requests the card reader, the other one gets `busy` (with the session that
+has it, as far as the viewer knows) or, with `wait`, gets the card reader as
+soon as it is released.
+
+The viewers of a computer coordinate through a lock file per local device
+(serial port or network address; files that are followed are not locked), in
+the viewer's state directory. The lock goes away with the viewer, even if it
+crashes. On Windows only one process can open the lock file for writing; on
+other systems it is locked with `flock`.
 
 ## Viewer behaviour
 
@@ -327,8 +366,10 @@ viewer becomes the owner; applications request their devices again.
 In the TigerVNC fork <https://github.com/schlaile/tigervnc>, branch
 `device-link`: Xvnc (`unix/common/DeviceLinkHost.cxx`) and vncviewer
 (`vncviewer/DeviceLink.cxx`, `vncviewer/DeviceLinkPort.cxx`).
-`tests/device-link/` has a protocol test of Xvnc and an end-to-end test of
-both with a pseudo terminal as serial port, a TCP server and a growing file.
+`contrib/device-link/vnc-device` runs programs with a device.
+`tests/device-link/` has a protocol test of Xvnc, an end-to-end test of
+both with a pseudo terminal as serial port, a TCP server and a growing file,
+and a test of two sessions sharing one card reader.
 The first desktop application is a point-of-sale system that opens its
 customer display, card reader and payment terminal by name.
 

@@ -72,6 +72,7 @@ private:
   Decision askUser(Channel* channel, DeviceLinkTarget* target,
                    std::string* message, uint8_t* status);
   void closeDialog(uint16_t id);
+  void acquire(Channel* channel, const DeviceLinkTarget& target);
   void start(Channel* channel, const DeviceLinkTarget& target);
 
   // Main thread, from a timer: what the threads did
