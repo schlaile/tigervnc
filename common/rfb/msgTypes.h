@@ -28,6 +28,10 @@ namespace rfb {
 
   const int msgTypeEndOfContinuousUpdates = 150;
 
+  // Both directions (doc/device-link.md); private value until a number
+  // is registered
+  const int msgTypeDeviceLink = 200;
+
   const int msgTypeServerFence = 248;
 
   // client to server

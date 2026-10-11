@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+#
+# Copyright 2026 Peter Schlaile
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this software; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
+# USA.
+#
+
+"""Runs a command with a device of the viewer's computer.
+
+Requests the device NAME from Xvnc (doc/device-link.md) and runs COMMAND
+with {} replaced by the path of the device. The device is released when
+the command ends. If the device is lost (unplugged, viewer gone), the
+command is stopped and, with --keep, started again once the device is
+back.
+
+  vnc-device cardreader serial --label Kartenleser --keep -- \\
+      perl rs2000_33w.pl {} rtscts
+
+Sessions that share the device with other sessions on the viewer's
+computer lock it for a while with "lock NAME" on the control socket.
+"""
+
+import argparse
+import os
+import select
+import signal
+import socket
+import stat
+import subprocess
+import sys
+import time
+
+
+def default_dir():
+    display = os.environ.get("DISPLAY", "")
+    number = display.split(":")[-1].split(".")[0] if ":" in display else ""
+    if not number:
+        sys.exit("vnc-device: no DISPLAY, give --dir")
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime and runtime.startswith("/"):
+        return os.path.join(runtime, "vnc-device-link", ":" + number)
+    return "/tmp/vnc-device-link-%d/:%s" % (os.getuid(), number)
+
+
+class Control:
+    def __init__(self, path):
+        self.sock = socket.socket(socket.AF_UNIX)
+        self.sock.connect(path)
+        self.buf = b""
+
+    def send(self, line):
+        self.sock.sendall(line.encode() + b"\n")
+
+    def lines(self, timeout):
+        """Lines that arrive within timeout seconds (None: wait)"""
+        out = []
+        if select.select([self.sock], [], [], timeout)[0]:
+            data = self.sock.recv(4096)
+            if not data:
+                raise EOFError("Xvnc closed the control socket")
+            self.buf += data
+        while b"\n" in self.buf:
+            line, self.buf = self.buf.split(b"\n", 1)
+            out.append(line.decode(errors="replace"))
+        return out
+
+
+def release(control, name):
+    """Gives the device back; Xvnc answers once the viewer has closed it,
+    so that it is free for other sessions when we return"""
+    control.send("release " + name)
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        for line in control.lines(0.2):
+            if line in ("ok " + name, "lost " + name) or \
+               line.startswith("error " + name + " "):
+                return
+
+
+def stop(proc):
+    """Ends the command with all its children (it runs in a process group
+    of its own)"""
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(3)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+
+
+def reader_gone(watch):
+    """Whether whoever reads our stdout (a pipe) has closed it: a program
+    that starts us as a device closes the pipe instead of killing us"""
+    if watch is None:
+        return False
+    return any(ev & (select.POLLERR | select.POLLHUP)
+               for _, ev in watch.poll(0))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run a command with a device of the VNC viewer's "
+                    "computer.")
+    parser.add_argument("name")
+    parser.add_argument("kind", choices=["serial", "tcp", "tail"])
+    parser.add_argument("--label", help="what the user is told")
+    parser.add_argument("--keep", action="store_true",
+                        help="start the command again after the device was "
+                             "lost, instead of ending")
+    parser.add_argument("--dir", help="device link directory of the "
+                                      "session, default from DISPLAY")
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+
+    command = args.command[1:] if args.command[:1] == ["--"] \
+        else args.command
+    if not command:
+        parser.error("no command")
+
+    control = Control(os.path.join(args.dir or default_dir(), "control"))
+
+    request = "request %s %s %s" % (args.name, args.kind,
+                                    args.label or args.name)
+
+    signal.signal(signal.SIGTERM, lambda *a: sys.exit(143))
+    signal.signal(signal.SIGHUP, lambda *a: sys.exit(129))
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+    watch = None
+    if stat.S_ISFIFO(os.fstat(1).st_mode):
+        watch = select.poll()
+        watch.register(1, 0)
+
+    viewer = False
+    proc = None
+    asked = False
+    try:
+        while True:
+            if viewer and not asked and proc is None:
+                control.send(request)
+                asked = True
+
+            if reader_gone(watch):
+                if proc is not None:
+                    stop(proc)
+                    proc = None
+                    release(control, args.name)
+                return 0
+
+            timeout = 0.2 if proc is not None or watch is not None else None
+            for line in control.lines(timeout):
+                words = line.split(" ", 2)
+                if line == "viewer present":
+                    viewer = True
+                elif line == "viewer absent":
+                    viewer = False
+                elif words[:2] == ["ok", args.name] and len(words) == 3 \
+                        and proc is None:
+                    path = words[2]
+                    argv = [a.replace("{}", path) for a in command]
+                    proc = subprocess.Popen(argv, start_new_session=True)
+                elif words[:2] == ["error", args.name]:
+                    asked = False
+                    reason = words[2] if len(words) > 2 else ""
+                    if reason.startswith("no-viewer"):
+                        continue
+                    print("vnc-device: %s: %s" % (args.name, reason),
+                          file=sys.stderr)
+                    if not args.keep:
+                        return 1
+                    time.sleep(5)
+                elif words[:2] == ["lost", args.name]:
+                    asked = False
+                    if proc is not None:
+                        stop(proc)
+                        proc = None
+                    print("vnc-device: %s was lost" % args.name,
+                          file=sys.stderr)
+                    if not args.keep:
+                        return 1
+
+            if proc is not None and proc.poll() is not None:
+                status = proc.returncode
+                proc = None
+                release(control, args.name)
+                asked = False
+                if not args.keep:
+                    return status if status >= 0 else 128 - status
+                time.sleep(1)
+    finally:
+        if proc is not None:
+            stop(proc)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (EOFError, ConnectionError, FileNotFoundError) as e:
+        sys.exit("vnc-device: %s" % e)

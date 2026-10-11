@@ -75,6 +75,10 @@ namespace rfb {
   // value until a number is registered
   const int pseudoEncodingDesktopEndpoint = 0x46445031;
 
+  // Device links (doc/device-link.md); private value until a number is
+  // registered
+  const int pseudoEncodingDeviceLink = 0x44564C31;
+
   int encodingNum(const char* name);
   const char* encodingName(int num);
 }

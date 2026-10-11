@@ -74,6 +74,7 @@ CConnection::CConnection()
     supportsLocalCursor(false), supportsCursorPosition(false),
     supportsDesktopResize(false), supportsLEDState(false),
     supportsAudio(false), supportsDesktopEndpoint(false),
+    supportsDeviceLink(false),
     is(nullptr), os(nullptr), reader_(nullptr), writer_(nullptr),
     shared(false),
     state_(RFBSTATE_UNINITIALISED),
@@ -1114,6 +1115,8 @@ void CConnection::updateEncodings()
     encodings.push_back(pseudoEncodingQEMUAudio);
   if (supportsDesktopEndpoint)
     encodings.push_back(pseudoEncodingDesktopEndpoint);
+  if (supportsDeviceLink)
+    encodings.push_back(pseudoEncodingDeviceLink);
 
   encodings.push_back(pseudoEncodingDesktopName);
   encodings.push_back(pseudoEncodingLastRect);

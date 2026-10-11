@@ -64,6 +64,7 @@
 #include <network/Socket.h>
 
 #include <rfb/ComparingUpdateTracker.h>
+#include <rfb/DeviceLink.h>
 #include <rfb/KeyRemapper.h>
 #include <rfb/KeysymStr.h>
 #include <rfb/SDesktop.h>
@@ -71,6 +72,7 @@
 #include <rfb/ServerCore.h>
 #include <rfb/VNCServerST.h>
 #include <rfb/VNCSConnectionST.h>
+#include <rfb/encodings.h>
 #include <rfb/ledStates.h>
 
 
@@ -89,7 +91,8 @@ VNCServerST::VNCServerST(const char* name_, SDesktop* desktop_)
   : desktop(desktop_), desktopStarted(false),
     desktopStarting(false), blockCounter(0), pb(nullptr),
     ledState(ledUnknown), name(name_), pointerClient(nullptr),
-    clipboardClient(nullptr), pointerClientTime(0),
+    clipboardClient(nullptr), deviceLinkChannels(0),
+    deviceLinkOwner(nullptr), pointerClientTime(0),
     comparer(nullptr), cursor(new Cursor(0, 0, {}, nullptr)),
     renderedCursorInvalid(false),
     keyRemapper(&KeyRemapper::defInstance),
@@ -188,6 +191,10 @@ void VNCServerST::removeSocket(network::Socket* sock) {
       if (clipboardClient == *ci)
         handleClipboardAnnounce(*ci, false);
       clipboardRequestors.remove(*ci);
+      if (deviceLinkOwner == *ci) {
+        deviceLinkOwner = nullptr;
+        desktop->deviceLinkOwnerChanged(false);
+      }
 
       std::string peer((*ci)->getPeerEndpoint());
 
@@ -197,6 +204,17 @@ void VNCServerST::removeSocket(network::Socket* sock) {
       clients.remove(*ci);
 
       connectionsLog.info(_("Closed: %s"), peer.c_str());
+
+      // - Hand the device links to the next client that can take them
+      if (deviceLinkOwner == nullptr && deviceLinkChannels) {
+        for (VNCSConnectionST* client : clients) {
+          if (client->canOwnDeviceLinks()) {
+            deviceLinkOwner = client;
+            desktop->deviceLinkOwnerChanged(true);
+            break;
+          }
+        }
+      }
 
       // - Check that the desktop object is still required
       if (authClientCount() == 0)
@@ -475,6 +493,52 @@ void VNCServerST::setDesktopEndpoint(const DesktopEndpoint& endpoint)
   std::list<VNCSConnectionST*>::iterator ci;
   for (ci = clients.begin(); ci != clients.end(); ++ci)
     (*ci)->setDesktopEndpointOrClose(endpoint);
+}
+
+void VNCServerST::enableDeviceLink(unsigned maxChannels)
+{
+  deviceLinkChannels = maxChannels;
+}
+
+bool VNCServerST::sendDeviceLink(uint8_t subtype, uint16_t channel,
+                                 const uint8_t* data, size_t len)
+{
+  if (deviceLinkOwner == nullptr)
+    return false;
+  deviceLinkOwner->writeDeviceLinkOrClose(subtype, channel, data, len);
+  return true;
+}
+
+void VNCServerST::deviceLinkClientReady(VNCSConnectionST* client)
+{
+  uint8_t hello[4];
+
+  if (!deviceLinkChannels)
+    return;
+  if (!client->canOwnDeviceLinks())
+    return;
+
+  hello[0] = deviceLinkVersion;
+  hello[1] = 0;
+  hello[2] = deviceLinkChannels >> 8;
+  hello[3] = deviceLinkChannels;
+  client->writeDeviceLinkOrClose(deviceLinkHello, 0, hello, sizeof(hello));
+
+  if (deviceLinkOwner == nullptr) {
+    deviceLinkOwner = client;
+    desktop->deviceLinkOwnerChanged(true);
+  }
+}
+
+void VNCServerST::handleDeviceLink(VNCSConnectionST* client,
+                                   uint8_t subtype, uint16_t channel,
+                                   const uint8_t* data, size_t len)
+{
+  if (client != deviceLinkOwner) {
+    slog.debug("Ignoring device link message from a client that is not the owner");
+    return;
+  }
+  desktop->handleDeviceLink(subtype, channel, data, len);
 }
 
 void VNCServerST::add_changed(const core::Region& region)

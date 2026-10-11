@@ -318,6 +318,7 @@ namespace rfb {
     bool supportsLEDState;
     bool supportsAudio;
     bool supportsDesktopEndpoint;
+    bool supportsDeviceLink;
 
   private:
     bool processVersionMsg();

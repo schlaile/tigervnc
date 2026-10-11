@@ -38,6 +38,7 @@
 #ifndef __RFB_SDESKTOP_H__
 #define __RFB_SDESKTOP_H__
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <rfb/screenTypes.h>
@@ -126,6 +127,16 @@ namespace rfb {
     // never be called if the clipboard data was no longer available
     // when the client received the request.
     virtual void handleClipboardData(const char* /*data*/) {}
+
+    // deviceLinkOwnerChanged() is called when a client becomes the
+    // owner of the device links, or when the owner goes away.
+    virtual void deviceLinkOwnerChanged(bool /*present*/) {}
+
+    // handleDeviceLink() is called for every DeviceLink message from the
+    // owner of the device links.
+    virtual void handleDeviceLink(uint8_t /*subtype*/, uint16_t /*channel*/,
+                                  const uint8_t* /*data*/,
+                                  size_t /*len*/) {}
 
   };
 

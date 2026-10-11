@@ -80,6 +80,12 @@ namespace rfb {
     void bellOrClose();
     void setDesktopNameOrClose(const char *name);
     void setDesktopEndpointOrClose(const DesktopEndpoint& endpoint);
+    void writeDeviceLinkOrClose(uint8_t subtype, uint16_t channel,
+                                const uint8_t* data, size_t len);
+
+    // canOwnDeviceLinks() is true if the client supports device links
+    // and may use the desktop
+    bool canOwnDeviceLinks() const;
     void setLEDStateOrClose(unsigned int state);
     void approveConnectionOrClose(bool accept, const char* reason);
     void requestClipboardOrClose();
@@ -148,6 +154,9 @@ namespace rfb {
     void supportsContinuousUpdates() override;
     void supportsLEDState() override;
     void supportsDesktopEndpoint() override;
+    void supportsDeviceLink() override;
+    void handleDeviceLink(uint8_t subtype, uint16_t channel,
+                          const uint8_t* data, size_t len) override;
 
     // Timer callbacks
     void handleTimeout(core::Timer* t) override;

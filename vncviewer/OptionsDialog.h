@@ -33,6 +33,7 @@ class Fl_Input;
 class Fl_Int_Input;
 class Fl_Choice;
 class Fl_Monitor_Arrangement;
+class DeviceLinkOptions;
 
 typedef void (OptionsCallback)(void*);
 
@@ -59,6 +60,7 @@ protected:
   void createShortcutsPage(int tx, int ty, int tw, int th);
   void createDisplayPage(int tx, int ty, int tw, int th);
   void createMiscPage(int tx, int ty, int tw, int th);
+  void createDevicesPage(int tx, int ty, int tw, int th);
 
   static void handleAutoselect(Fl_Widget *widget, void *data);
   static void handleCompression(Fl_Widget *widget, void *data);
@@ -166,6 +168,9 @@ protected:
   /* Misc. */
   Fl_Check_Button *sharedCheckbox;
   Fl_Check_Button *reconnectCheckbox;
+
+  /* Devices */
+  DeviceLinkOptions *deviceLinkOptions;
 #ifdef HAVE_AUDIO
   Fl_Check_Button *audioCheckbox;
 #endif

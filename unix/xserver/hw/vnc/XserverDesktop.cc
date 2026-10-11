@@ -82,7 +82,7 @@ XserverDesktop::XserverDesktop(int screenIndex_,
                                void* fbptr, int stride_)
   : screenIndex(screenIndex_),
     server(0), listeners(listeners_),
-    shadowFramebuffer(nullptr),
+    shadowFramebuffer(nullptr), deviceLink(nullptr),
     queryConnectId(0), queryConnectTimer(this)
 {
   format = pf;
@@ -96,6 +96,7 @@ XserverDesktop::XserverDesktop(int screenIndex_,
 
 XserverDesktop::~XserverDesktop()
 {
+  delete deviceLink;
   while (!listeners.empty()) {
     vncRemoveNotifyFd(listeners.back()->getFd());
     delete listeners.back();
@@ -252,6 +253,16 @@ void XserverDesktop::setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint)
   }
 }
 
+void XserverDesktop::enableDeviceLink(const char* dir,
+                                      unsigned maxChannels)
+{
+  try {
+    deviceLink = new DeviceLinkHost(this, server, dir, maxChannels);
+  } catch (std::exception& e) {
+    vlog.error(_("Unable to offer device links: %s"), e.what());
+  }
+}
+
 void XserverDesktop::setCursor(int width, int height, int hotX, int hotY,
                                const unsigned char *rgbaData)
 {
@@ -320,6 +331,9 @@ void XserverDesktop::add_copied(const core::Region& dest,
 void XserverDesktop::handleSocketEvent(int fd, bool read, bool write)
 {
   try {
+    if (deviceLink && deviceLink->handleFdEvent(fd, read, write))
+      return;
+
     if (read) {
       if (handleListenerEvent(fd))
         return;
@@ -332,6 +346,29 @@ void XserverDesktop::handleSocketEvent(int fd, bool read, bool write)
   } catch (std::exception& e) {
     vlog.error("XserverDesktop::handleSocketEvent: %s",e.what());
   }
+}
+
+void XserverDesktop::deviceLinkOwnerChanged(bool present)
+{
+  if (deviceLink)
+    deviceLink->ownerChanged(present);
+}
+
+void XserverDesktop::handleDeviceLink(uint8_t subtype, uint16_t channel,
+                                      const uint8_t* data, size_t len)
+{
+  if (deviceLink)
+    deviceLink->handleMessage(subtype, channel, data, len);
+}
+
+void XserverDesktop::watchFd(int fd, bool read, bool write)
+{
+  vncSetNotifyFd(fd, screenIndex, read, write);
+}
+
+void XserverDesktop::unwatchFd(int fd)
+{
+  vncRemoveNotifyFd(fd);
 }
 
 bool XserverDesktop::handleListenerEvent(int fd)

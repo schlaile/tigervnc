@@ -24,6 +24,7 @@
 #ifndef __RFB_CMSGHANDLER_H__
 #define __RFB_CMSGHANDLER_H__
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <rfb/DesktopEndpoint.h>
@@ -56,6 +57,11 @@ namespace rfb {
     // A side-channel endpoint was announced or withdrawn (see
     // doc/file-drop.md); clients that do not use endpoints ignore it
     virtual void setDesktopEndpoint(const DesktopEndpoint& /*endpoint*/) {}
+    // A DeviceLink message (see doc/device-link.md); clients that do not
+    // use device links ignore it
+    virtual void handleDeviceLink(uint8_t /*subtype*/, uint16_t /*channel*/,
+                                  const uint8_t* /*data*/,
+                                  size_t /*len*/) {}
     virtual void fence(uint32_t flags, unsigned len,
                        const uint8_t data[]) = 0;
     virtual void endOfContinuousUpdates() = 0;

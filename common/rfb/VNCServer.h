@@ -154,6 +154,17 @@ namespace rfb {
     // endpoint with an empty URL withdraws the service.
     virtual void setDesktopEndpoint(const DesktopEndpoint& endpoint) = 0;
 
+    // enableDeviceLink() offers device links (doc/device-link.md) to
+    // clients that support them, with at most maxChannels open at a
+    // time. The devices belong to one client, the owner; the desktop
+    // learns about it with SDesktop::deviceLinkOwnerChanged().
+    virtual void enableDeviceLink(unsigned maxChannels) = 0;
+
+    // sendDeviceLink() sends a DeviceLink message to the owner of the
+    // device links. It returns false if there is no owner.
+    virtual bool sendDeviceLink(uint8_t subtype, uint16_t channel,
+                                const uint8_t* data, size_t len) = 0;
+
     // setLEDState() tells the server what the current lock keys LED
     // state is
     virtual void setLEDState(unsigned int state) = 0;

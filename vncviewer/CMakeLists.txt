@@ -15,6 +15,11 @@ add_executable(vncviewer
   BaseTouchHandler.cxx
   CConn.cxx
   DesktopWindow.cxx
+  DeviceLink.cxx
+  DeviceLinkPort.cxx
+  DeviceLinkProfile.cxx
+  DeviceLinkOptions.cxx
+  DeviceLinkShare.cxx
   EmulateMB.cxx
   ServerDialog.cxx
   ShortcutHandler.cxx

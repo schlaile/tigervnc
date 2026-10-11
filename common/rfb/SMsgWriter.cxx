@@ -34,6 +34,7 @@
 #include <rfb/msgTypes.h>
 #include <rfb/fenceTypes.h>
 #include <rfb/clipboardTypes.h>
+#include <rfb/DeviceLink.h>
 #include <rfb/ClientParams.h>
 #include <rfb/Cursor.h>
 #include <rfb/UpdateTracker.h>
@@ -234,6 +235,23 @@ void SMsgWriter::writeFence(uint32_t flags, unsigned len,
   if (len > 0)
     os->writeBytes(data, len);
 
+  endMsg();
+}
+
+void SMsgWriter::writeDeviceLink(uint8_t subtype, uint16_t channel,
+                                 const uint8_t* data, size_t len)
+{
+  if (!client->supportsEncoding(pseudoEncodingDeviceLink))
+    throw std::logic_error("Client does not support device links");
+  if (len > deviceLinkMaxData)
+    throw std::out_of_range("Too large device link message");
+
+  startMsg(msgTypeDeviceLink);
+  os->writeU8(subtype);
+  os->writeU16(channel);
+  os->writeU32(len);
+  if (len > 0)
+    os->writeBytes(data, len);
   endMsg();
 }
 

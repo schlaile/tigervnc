@@ -72,6 +72,9 @@ extern core::BoolParameter fileDrop;
 extern core::EnumParameter fileDropOpen;
 #endif
 
+extern core::StringParameter deviceLinkProfile;
+extern core::StringParameter deviceLinksFile;
+
 extern core::BoolParameter acceptClipboard;
 extern core::BoolParameter setPrimary;
 extern core::BoolParameter sendClipboard;

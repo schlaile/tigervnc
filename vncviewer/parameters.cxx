@@ -221,6 +221,18 @@ core::EnumParameter
                {"Ask", "Once", "Always", "Never"}, "Ask");
 #endif
 
+core::StringParameter
+  deviceLinkProfile("DeviceLinkProfile",
+                    _("Profile of the devices of this computer that the "
+                      "remote desktop may use (see DeviceLinksFile); "
+                      "empty: none"),
+                    "");
+core::StringParameter
+  deviceLinksFile("DeviceLinksFile",
+                  _("File with the device profiles, default "
+                    "device-links in the configuration directory"),
+                  "");
+
 core::BoolParameter
   acceptClipboard("AcceptClipboard",
                   _("Accept clipboard changes from the server"),
@@ -295,6 +307,8 @@ static core::VoidParameter* parameterArray[] = {
   &fileDrop,
   &fileDropOpen,
 #endif
+  &deviceLinkProfile,
+  &deviceLinksFile,
   /* Compression */
   &autoSelect,
   &fullColour,
