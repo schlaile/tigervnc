@@ -1,3 +1,10 @@
+tigervnc-wws (1.16.80+wws1-1) unstable; urgency=medium
+
+  * Built from the wws branch, which joins file drop, device links and
+    client certificates.
+
+ -- Peter Schlaile <peter@schlaile.de>  Sun, 11 Oct 2026 16:37:22 +0200
+
 tigervnc-wws (1.16.80+filedrop1-2) unstable; urgency=medium
 
   * Build-depend on fluid: the FLTK CMake targets of bookworm reference

@@ -331,7 +331,7 @@ jobs:
   # developer builds that rely on the libraries of the build machine).
   # Windows: a folder with the viewer and its DLLs, zipped.
   dist-windows:
-    if: startsWith(github.ref, 'refs/tags/wws-') || github.ref == 'refs/heads/file-drop'
+    if: startsWith(github.ref, 'refs/tags/wws-') || github.ref == 'refs/heads/wws'
     runs-on: windows-latest
     timeout-minutes: 30
     defaults:
@@ -399,7 +399,7 @@ jobs:
 
   # macOS: the app with the Homebrew libraries copied into it
   dist-macos:
-    if: startsWith(github.ref, 'refs/tags/wws-') || github.ref == 'refs/heads/file-drop'
+    if: startsWith(github.ref, 'refs/tags/wws-') || github.ref == 'refs/heads/wws'
     runs-on: macos-14
     timeout-minutes: 30
     env:

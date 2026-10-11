@@ -33,8 +33,10 @@ Rules-Requires-Root: no
 Package: tigervnc-wws-viewer
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: TigerVNC viewer with VNC File Drop for the WWS
- The TigerVNC viewer of the file-drop branch: files dragged onto the viewer
- window are offered to the VNC session through the side channel the server
- announces (DesktopEndpoint) and uploaded with tus.  Installed as
- tigervnc-wws-viewer next to the viewer of the distribution.
+Description: TigerVNC viewer for the WWS
+ The TigerVNC viewer of the wws branch: VNC File Drop (files dragged onto
+ the viewer window are uploaded to the VNC session through the side channel
+ the server announces), VNC Device Link (serial ports, network devices and
+ files of this computer for the remote desktop) and X.509 client
+ certificates.  Installed as tigervnc-wws-viewer next to the viewer of the
+ distribution.
