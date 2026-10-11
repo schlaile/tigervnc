@@ -121,6 +121,8 @@ protected:
 #ifdef HAVE_GNUTLS
   Fl_Input *caInput;
   Fl_Input *crlInput;
+  Fl_Input *clientCertInput;
+  Fl_Input *clientKeyInput;
 #endif
 
   Fl_Group *authenticationGroup;

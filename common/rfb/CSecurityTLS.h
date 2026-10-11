@@ -49,12 +49,18 @@ namespace rfb {
 
     static core::StringParameter X509CA;
     static core::StringParameter X509CRL;
+    static core::StringParameter X509ClientCert;
+    static core::StringParameter X509ClientKey;
+
+    // Whether we present a client certificate (X509ClientCert is set)
+    static bool useClientCert();
 
   protected:
     void shutdown();
     void freeResources();
     void setParam();
     void checkSession();
+    static bool hasPurpose(const gnutls_datum_t* cert, const char* oid);
     CConnection *client;
 
   private:

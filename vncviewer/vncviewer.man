@@ -386,6 +386,20 @@ Path to certificate revocation list to use in conjunction with
 \fB-X509CA\fP. Must also be in PEM format. Default is
 \fI$XDG_CONFIG_HOME/tigervnc/x509_crl.pem\fP, or
 \fI~/.config/tigervnc/x509_crl.pem\fP.
+.
+.TP
+.B \-X509ClientCert \fIpath\fP
+Path to a client certificate to present to the server, in PEM format, for
+servers that take only viewers with a certificate of their authority. With a
+client certificate, the server must have a certificate of the authority in
+\fB-X509CA\fP alone, without the system's trusted authorities, whose
+extended key usage names TLS server authentication; there are no exceptions
+for other certificates. Default is none.
+.
+.TP
+.B \-X509ClientKey \fIpath\fP
+Path to the private key of \fB-X509ClientCert\fP, in PEM format, if it is not
+in the same file.
 
 .SH FILES
 .TP
