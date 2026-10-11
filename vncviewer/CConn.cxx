@@ -64,9 +64,9 @@
 #include "AudioOutput.h"
 #include "AuthDialog.h"
 #include "CConn.h"
+#include "DeviceLink.h"
 #ifdef HAVE_GNUTLS
 #include "FileDrop.h"
-#include "DeviceLink.h"
 #endif
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
