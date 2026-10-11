@@ -30,6 +30,8 @@
 #endif
 
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 #ifndef WIN32
 #include <unistd.h>
 #endif
@@ -61,6 +63,18 @@ core::StringParameter CSecurityTLS::X509CRL(
   "X509CRL",
   _("Path to the X.509 certificate revocation list"),
   configdirfn("x509_crl.pem"));
+
+core::StringParameter CSecurityTLS::X509ClientCert(
+  "X509ClientCert",
+  _("Path to the X.509 certificate to present to the server. If set, "
+    "the server must have a certificate for TLS servers from the "
+    "certificate authority in X509CA"),
+  "");
+core::StringParameter CSecurityTLS::X509ClientKey(
+  "X509ClientKey",
+  _("Path to the private key of the client certificate, if it is not "
+    "in the same file"),
+  "");
 
 static core::LogWriter vlog("TLS");
 
@@ -256,14 +270,49 @@ void CSecurityTLS::setParam()
     if (ret != GNUTLS_E_SUCCESS)
       throw rdr::tls_error("gnutls_certificate_allocate_credentials()", ret);
 
-    if (gnutls_certificate_set_x509_system_trust(cert_cred) < 1)
-      vlog.error(_("Failed to load the system certificate trust store"));
+    if (useClientCert()) {
+      const char* keyFile;
+      struct stat st;
 
-    if (gnutls_certificate_set_x509_trust_file(cert_cred, X509CA, GNUTLS_X509_FMT_PEM) < 0)
-      vlog.error(_("Failed to load the user specified certificate authority"));
+      // As with OpenVPN, only our own authority vouches for servers:
+      // no system trust store, no exceptions, and errors are fatal
+      ret = gnutls_certificate_set_x509_trust_file(cert_cred, X509CA,
+                                                   GNUTLS_X509_FMT_PEM);
+      if (ret < 1)
+        throw rdr::tls_error(
+          _("Failed to load the user specified certificate authority"),
+          ret < 0 ? ret : GNUTLS_E_NO_CERTIFICATE_FOUND);
 
-    if (gnutls_certificate_set_x509_crl_file(cert_cred, X509CRL, GNUTLS_X509_FMT_PEM) < 0)
-      vlog.error(_("Failed to load the user specified certificate revocation list"));
+      if (stat(X509CRL, &st) == 0) {
+        ret = gnutls_certificate_set_x509_crl_file(cert_cred, X509CRL,
+                                                   GNUTLS_X509_FMT_PEM);
+        if (ret < 0)
+          throw rdr::tls_error(
+            _("Failed to load the user specified certificate "
+              "revocation list"), ret);
+      }
+
+      keyFile = X509ClientKey;
+      if (strcmp(keyFile, "") == 0)
+        keyFile = X509ClientCert;
+      ret = gnutls_certificate_set_x509_key_file(cert_cred,
+                                                 X509ClientCert,
+                                                 keyFile,
+                                                 GNUTLS_X509_FMT_PEM);
+      if (ret != GNUTLS_E_SUCCESS)
+        throw rdr::tls_error(
+          _("Failed to load the client certificate and private key"),
+          ret);
+    } else {
+      if (gnutls_certificate_set_x509_system_trust(cert_cred) < 1)
+        vlog.error(_("Failed to load the system certificate trust store"));
+
+      if (gnutls_certificate_set_x509_trust_file(cert_cred, X509CA, GNUTLS_X509_FMT_PEM) < 0)
+        vlog.error(_("Failed to load the user specified certificate authority"));
+
+      if (gnutls_certificate_set_x509_crl_file(cert_cred, X509CRL, GNUTLS_X509_FMT_PEM) < 0)
+        vlog.error(_("Failed to load the user specified certificate revocation list"));
+    }
 
     ret = gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cert_cred);
     if (ret != GNUTLS_E_SUCCESS)
@@ -291,8 +340,15 @@ void CSecurityTLS::setParam()
   }
 }
 
+bool CSecurityTLS::useClientCert()
+{
+  return strcmp(X509ClientCert, "") != 0;
+}
+
 void CSecurityTLS::checkSession()
 {
+  gnutls_typed_vdata_st data[2];
+  unsigned int elements;
   unsigned int status;
 
   const gnutls_datum_t *cert_list;
@@ -308,9 +364,21 @@ void CSecurityTLS::checkSession()
     throw protocol_error(_("Unsupported certificate type"));
   }
 
-  err = gnutls_certificate_verify_peers3(session,
-                                         client->getServerName(),
-                                         &status);
+  // A certificate whose extended key usage leaves out TLS servers is
+  // not one for servers, e.g. a client certificate of the same
+  // authority
+  elements = 0;
+  data[elements].type = GNUTLS_DT_DNS_HOSTNAME;
+  data[elements].data = (unsigned char*)client->getServerName();
+  data[elements].size = 0;
+  elements++;
+  data[elements].type = GNUTLS_DT_KEY_PURPOSE_OID;
+  data[elements].data = (unsigned char*)GNUTLS_KP_TLS_WWW_SERVER;
+  data[elements].size = 0;
+  elements++;
+
+  err = gnutls_certificate_verify_peers(session, data, elements,
+                                        &status);
   if (err != 0) {
     vlog.error(_("Server certificate verification failed: %s"),
                gnutls_strerror(err));
@@ -319,16 +387,38 @@ void CSecurityTLS::checkSession()
                          err);
   }
 
-  /* Everything green? */
-  if (status == 0)
-    return;
-
   cert_list = gnutls_certificate_get_peers(session, &cert_list_size);
   if (!cert_list_size) {
     gnutls_alert_send(session, GNUTLS_AL_FATAL,
                       GNUTLS_A_UNSUPPORTED_CERTIFICATE);
     throw protocol_error(_("Empty certificate chain"));
   }
+
+  if (useClientCert()) {
+    // Not even a certificate without extended key usage will do
+    if (status == 0 && !hasPurpose(&cert_list[0],
+                                   GNUTLS_KP_TLS_WWW_SERVER))
+      status = GNUTLS_CERT_INVALID | GNUTLS_CERT_PURPOSE_MISMATCH;
+
+    if (status != 0) {
+      gnutls_datum_t status_str;
+      std::string reason;
+
+      if (gnutls_certificate_verification_status_print(
+            status, GNUTLS_CRT_X509, &status_str, 0) == GNUTLS_E_SUCCESS) {
+        reason = (const char*)status_str.data;
+        gnutls_free(status_str.data);
+      }
+      gnutls_alert_send(session, GNUTLS_AL_FATAL,
+                        GNUTLS_A_BAD_CERTIFICATE);
+      throw protocol_error(core::format(
+        _("Invalid server certificate: %s"), reason.c_str()));
+    }
+  }
+
+  /* Everything green? */
+  if (status == 0)
+    return;
 
   try {
     /* Process only server's certificate, not issuer's certificate */
@@ -342,4 +432,37 @@ void CSecurityTLS::checkSession()
     gnutls_alert_send_appropriate(session, e.err);
     throw;
   }
+}
+
+bool CSecurityTLS::hasPurpose(const gnutls_datum_t* cert,
+                              const char* oid)
+{
+  gnutls_x509_crt_t crt;
+  bool found;
+
+  if (gnutls_x509_crt_init(&crt) != GNUTLS_E_SUCCESS)
+    return false;
+  if (gnutls_x509_crt_import(crt, cert,
+                             GNUTLS_X509_FMT_DER) != GNUTLS_E_SUCCESS) {
+    gnutls_x509_crt_deinit(crt);
+    return false;
+  }
+
+  found = false;
+  for (unsigned int i = 0; !found; i++) {
+    char buf[128];
+    size_t size = sizeof(buf);
+    int err;
+
+    err = gnutls_x509_crt_get_key_purpose_oid(crt, i, buf, &size,
+                                              nullptr);
+    if (err == GNUTLS_E_SHORT_MEMORY_BUFFER)
+      continue;
+    if (err != GNUTLS_E_SUCCESS)
+      break;
+    found = strcmp(buf, oid) == 0;
+  }
+
+  gnutls_x509_crt_deinit(crt);
+  return found;
 }

@@ -295,6 +295,8 @@ static core::VoidParameter* parameterArray[] = {
 #ifdef HAVE_GNUTLS
   &rfb::CSecurityTLS::X509CA,
   &rfb::CSecurityTLS::X509CRL,
+  &rfb::CSecurityTLS::X509ClientCert,
+  &rfb::CSecurityTLS::X509ClientKey,
 #endif // HAVE_GNUTLS
   &rfb::SecurityClient::secTypes,
   /* Misc. */

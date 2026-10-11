@@ -29,7 +29,7 @@ namespace rfb {
 
   class SecurityServer : public Security {
   public:
-    SecurityServer(void) : Security(secTypes) {}
+    SecurityServer(void);
 
     /* Create server side SSecurity class instance */
     SSecurity* GetSSecurity(SConnection* sc, uint32_t secType);

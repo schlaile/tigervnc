@@ -1,0 +1,241 @@
+#!/bin/sh
+#
+# Copyright 2026 Peter Schlaile
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this software; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
+# USA.
+#
+# A small certificate authority for VNC servers and viewers, in the
+# manner of OpenVPN's easy-rsa: servers get certificates for TLS
+# servers, viewers get certificates for TLS clients, and neither will do
+# for the other.
+#
+#   vnc-ca init "Example VNC CA"
+#   vnc-ca server vnc.example.com 192.0.2.10
+#   vnc-ca client kasse1
+#   vnc-ca revoke kasse1
+#
+# Xvnc:      -SecurityTypes X509None -X509Cert server.pem -X509Key server.key
+#            -X509ClientCA ca.pem -X509ClientCRL crl.pem
+# vncviewer: -X509CA ca.pem -X509ClientCert client.pem
+#            -X509ClientKey client.key
+
+set -e
+
+die() {
+	echo "vnc-ca: $*" >&2
+	exit 1
+}
+
+usage() {
+	cat >&2 <<EOF
+usage: vnc-ca [-d DIR] [--days N] COMMAND ...
+
+  init [NAME]               create the authority in DIR
+  server NAME [ALTNAME...]  certificate for a VNC server; NAME and the
+                            ALTNAMEs (host names, IP addresses) are the
+                            names viewers connect to
+  client NAME               certificate for a viewer (a computer or a
+                            person)
+  revoke NAME               revoke the certificate and renew crl.pem
+  crl                       renew crl.pem
+  list                      list the certificates
+
+DIR is \$VNC_CA_DIR or the current directory. Certificates and keys are
+written to DIR/NAME.pem and DIR/NAME.key; give ca.pem, crl.pem and the
+files of a name to the computer it is for.
+EOF
+	exit 2
+}
+
+dir=${VNC_CA_DIR:-.}
+days=3650
+
+while [ $# -gt 0 ]; do
+	case $1 in
+	-d) dir=$2; shift 2 ;;
+	--days) days=$2; shift 2 ;;
+	-h|--help) usage ;;
+	-*) usage ;;
+	*) break ;;
+	esac
+done
+[ $# -gt 0 ] || usage
+command=$1
+shift
+
+[ "$command" != init ] || mkdir -p "$dir"
+[ -d "$dir" ] || die "no directory $dir"
+dir=$(cd "$dir" && pwd)
+conf=$dir/openssl.cnf
+
+need_ca() {
+	[ -f "$dir/ca.key" ] || die "no authority in $dir, run vnc-ca init first"
+}
+
+check_name() {
+	case $1 in
+	''|*/*|.*|ca|crl|openssl) die "unusable name: $1" ;;
+	esac
+	[ ! -e "$dir/$1.pem" ] || die "$dir/$1.pem exists already"
+}
+
+gencrl() {
+	openssl ca -config "$conf" -gencrl -out "$dir/crl.pem" 2>/dev/null ||
+		die "could not renew the revocation list"
+}
+
+# Key and request for NAME, signed with the extensions EXT; extra
+# lines for the extensions come on stdin
+issue() {
+	name=$1
+	ext=$2
+	(
+		umask 077
+		openssl genpkey -algorithm EC \
+			-pkeyopt ec_paramgen_curve:prime256v1 \
+			-out "$dir/$name.key"
+	)
+	openssl req -new -key "$dir/$name.key" -subj "/CN=$name" \
+		-out "$dir/$name.csr"
+	cat "$conf" - > "$dir/$name.cnf"
+	if ! openssl ca -batch -config "$dir/$name.cnf" -extensions "$ext" \
+		-days "$days" -notext -in "$dir/$name.csr" \
+		-out "$dir/$name.pem" 2>"$dir/$name.log"; then
+		cat "$dir/$name.log" >&2
+		rm -f "$dir/$name.key" "$dir/$name.pem"
+		rm -f "$dir/$name.csr" "$dir/$name.cnf" "$dir/$name.log"
+		die "could not issue the certificate for $name"
+	fi
+	rm -f "$dir/$name.csr" "$dir/$name.cnf" "$dir/$name.log"
+	echo "$dir/$name.pem, $dir/$name.key"
+}
+
+case $command in
+init)
+	[ $# -le 1 ] || usage
+	[ ! -e "$dir/ca.key" ] || die "$dir has an authority already"
+	chmod 700 "$dir"
+	cat > "$conf" <<EOF
+[ ca ]
+default_ca = vnc_ca
+
+[ vnc_ca ]
+dir = $dir
+database = \$dir/index.txt
+new_certs_dir = \$dir/issued
+serial = \$dir/serial
+crlnumber = \$dir/crlnumber
+certificate = \$dir/ca.pem
+private_key = \$dir/ca.key
+default_md = sha256
+default_crl_days = 3650
+policy = policy_any
+unique_subject = yes
+copy_extensions = none
+
+[ policy_any ]
+commonName = supplied
+
+[ server ]
+basicConstraints = critical, CA:false
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid
+subjectAltName = @server_names
+
+[ client ]
+basicConstraints = critical, CA:false
+keyUsage = critical, digitalSignature
+extendedKeyUsage = clientAuth
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid
+
+[ ca_ext ]
+basicConstraints = critical, CA:true, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+EOF
+	mkdir -p "$dir/issued"
+	: > "$dir/index.txt"
+	echo 01 > "$dir/crlnumber"
+	openssl rand -hex 16 > "$dir/serial"
+	(
+		umask 077
+		openssl genpkey -algorithm EC \
+			-pkeyopt ec_paramgen_curve:prime256v1 \
+			-out "$dir/ca.key"
+	)
+	openssl req -new -x509 -key "$dir/ca.key" \
+		-subj "/CN=${1:-VNC CA}" -days $((days * 2)) \
+		-config "$conf" -extensions ca_ext -out "$dir/ca.pem"
+	gencrl
+	echo "$dir/ca.pem, $dir/crl.pem"
+	;;
+server)
+	[ $# -ge 1 ] || usage
+	need_ca
+	check_name "$1"
+	name=$1
+	i=0
+	for alt in "$@"; do
+		i=$((i + 1))
+		case $alt in
+		*:*) echo "IP.$i = $alt" ;;
+		*[!0-9.]*) echo "DNS.$i = $alt" ;;
+		*) echo "IP.$i = $alt" ;;
+		esac
+	done | {
+		printf '\n[ server_names ]\n'
+		cat
+	} | issue "$name" server
+	;;
+client)
+	[ $# -eq 1 ] || usage
+	need_ca
+	check_name "$1"
+	issue "$1" client < /dev/null
+	;;
+revoke)
+	[ $# -eq 1 ] || usage
+	need_ca
+	[ -f "$dir/$1.pem" ] || die "no certificate $dir/$1.pem"
+	openssl ca -config "$conf" -revoke "$dir/$1.pem" 2>/dev/null ||
+		die "could not revoke $1"
+	gencrl
+	mv "$dir/$1.pem" "$dir/$1.pem.revoked"
+	rm -f "$dir/$1.key"
+	echo "revoked; give $dir/crl.pem to the servers"
+	;;
+crl)
+	[ $# -eq 0 ] || usage
+	need_ca
+	gencrl
+	echo "$dir/crl.pem"
+	;;
+list)
+	[ $# -eq 0 ] || usage
+	need_ca
+	awk -F '\t' '{
+		state = $1 == "V" ? "valid" : $1 == "R" ? "revoked" : "expired"
+		sub(/^\/CN=/, "", $6)
+		printf "%-8s %s\n", state, $6
+	}' "$dir/index.txt"
+	;;
+*)
+	usage
+	;;
+esac

@@ -29,9 +29,13 @@
 #endif
 
 #include <stdlib.h>
+#include <string.h>
+
+#include <string>
 
 #include <core/LogWriter.h>
 #include <core/i18n.h>
+#include <core/string.h>
 
 #include <rfb/SSecurityTLS.h>
 #include <rfb/SConnection.h>
@@ -72,7 +76,25 @@ core::StringParameter SSecurityTLS::X509_KeyFile(
   _("Path to the private key of the server's X.509 certificate"),
   "");
 
+core::StringParameter SSecurityTLS::X509_ClientCAFile(
+  "X509ClientCA",
+  _("Path to the X.509 certificate of the authority that issues client "
+    "certificates. If set, clients must present a certificate of this "
+    "authority, and only the X509 security types are offered"),
+  "");
+
+core::StringParameter SSecurityTLS::X509_ClientCRLFile(
+  "X509ClientCRL",
+  _("Path to the X.509 certificate revocation list for client "
+    "certificates"),
+  "");
+
 static core::LogWriter vlog("TLS");
+
+bool SSecurityTLS::requireClientCert()
+{
+  return strcmp(X509_ClientCAFile, "") != 0;
+}
 
 SSecurityTLS::SSecurityTLS(SConnection* sc_, bool _anon)
   : SSecurity(sc_), session(nullptr), anon_cred(nullptr),
@@ -187,7 +209,97 @@ bool SSecurityTLS::processMsg()
 
   sc->setStreams(&tlssock->inStream(), &tlssock->outStream());
 
+  // After switching streams, so that the client gets our reason
+  // through the session
+  if (!anon && requireClientCert())
+    checkClientCert();
+
   return true;
+}
+
+void SSecurityTLS::checkClientCert()
+{
+  gnutls_typed_vdata_st purpose;
+  const gnutls_datum_t* cert_list;
+  unsigned int cert_list_size = 0;
+  unsigned int status;
+  gnutls_x509_crt_t crt;
+  gnutls_datum_t dn;
+  int err;
+
+  cert_list = gnutls_certificate_get_peers(session, &cert_list_size);
+  // Refusals go to the client as the security result, with the reason,
+  // rather than as a TLS alert
+  if (cert_list_size == 0 ||
+      gnutls_certificate_type_get(session) != GNUTLS_CRT_X509)
+    throw auth_error(_("No client certificate"));
+
+  // GnuTLS rejects certificates whose extended key usage leaves out
+  // client authentication; checkPurpose() also rejects those without
+  // one, so that no server certificate of our authority will do
+  purpose.type = GNUTLS_DT_KEY_PURPOSE_OID;
+  purpose.data = (unsigned char*)GNUTLS_KP_TLS_WWW_CLIENT;
+  purpose.size = 0;
+  err = gnutls_certificate_verify_peers(session, &purpose, 1, &status);
+  if (err != GNUTLS_E_SUCCESS) {
+    gnutls_alert_send_appropriate(session, err);
+    throw rdr::tls_error(_("Client certificate verification failed"),
+                         err);
+  }
+
+  err = gnutls_x509_crt_init(&crt);
+  if (err != GNUTLS_E_SUCCESS)
+    throw rdr::tls_error("gnutls_x509_crt_init()", err);
+  err = gnutls_x509_crt_import(crt, &cert_list[0], GNUTLS_X509_FMT_DER);
+  if (err != GNUTLS_E_SUCCESS) {
+    gnutls_x509_crt_deinit(crt);
+    throw rdr::tls_error(_("Failed to decode client certificate"), err);
+  }
+
+  if (status == 0 && !checkPurpose(crt, GNUTLS_KP_TLS_WWW_CLIENT))
+    status = GNUTLS_CERT_INVALID | GNUTLS_CERT_PURPOSE_MISMATCH;
+
+  std::string name;
+  if (gnutls_x509_crt_get_dn3(crt, &dn, 0) == GNUTLS_E_SUCCESS) {
+    name = (const char*)dn.data;
+    gnutls_free(dn.data);
+  }
+  gnutls_x509_crt_deinit(crt);
+
+  if (status != 0) {
+    gnutls_datum_t status_str;
+    std::string reason;
+
+    if (gnutls_certificate_verification_status_print(
+          status, GNUTLS_CRT_X509, &status_str, 0) == GNUTLS_E_SUCCESS) {
+      reason = (const char*)status_str.data;
+      gnutls_free(status_str.data);
+    }
+    vlog.error(_("Client certificate %s rejected: %s"), name.c_str(),
+               reason.c_str());
+    throw auth_error(core::format(_("Client certificate rejected: %s"),
+                                  reason.c_str()));
+  }
+
+  vlog.info(_("Client certificate %s accepted"), name.c_str());
+}
+
+bool SSecurityTLS::checkPurpose(gnutls_x509_crt_t crt, const char* oid)
+{
+  for (unsigned int i = 0; ; i++) {
+    char buf[128];
+    size_t size = sizeof(buf);
+    int err;
+
+    err = gnutls_x509_crt_get_key_purpose_oid(crt, i, buf, &size,
+                                              nullptr);
+    if (err == GNUTLS_E_SHORT_MEMORY_BUFFER)
+      continue;
+    if (err != GNUTLS_E_SUCCESS)
+      return false;
+    if (strcmp(buf, oid) == 0)
+      return true;
+  }
 }
 
 void SSecurityTLS::setParams()
@@ -290,9 +402,36 @@ void SSecurityTLS::setParams()
         _("Failed to load the server certificate and private key"),
         ret);
 
+    if (requireClientCert()) {
+      // Read for every connection, so that a new revocation list
+      // applies at once
+      ret = gnutls_certificate_set_x509_trust_file(cert_cred,
+                                                   X509_ClientCAFile,
+                                                   GNUTLS_X509_FMT_PEM);
+      if (ret < 1)
+        throw rdr::tls_error(
+          _("Failed to load the certificate authority for client "
+            "certificates"),
+          ret < 0 ? ret : GNUTLS_E_NO_CERTIFICATE_FOUND);
+
+      if (strcmp(X509_ClientCRLFile, "") != 0) {
+        ret = gnutls_certificate_set_x509_crl_file(cert_cred,
+                                                   X509_ClientCRLFile,
+                                                   GNUTLS_X509_FMT_PEM);
+        if (ret < 0)
+          throw rdr::tls_error(
+            _("Failed to load the certificate revocation list for "
+              "client certificates"), ret);
+      }
+    }
+
     ret = gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cert_cred);
     if (ret != GNUTLS_E_SUCCESS)
       throw rdr::tls_error("gnutls_credentials_set()", ret);
+
+    // Checked ourselves after the handshake, to tell the client why
+    if (requireClientCert())
+      gnutls_certificate_server_set_request(session, GNUTLS_CERT_REQUEST);
 
     vlog.debug("X509 session has been set");
 

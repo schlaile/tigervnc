@@ -313,6 +313,8 @@ void OptionsDialog::loadOptions(void)
 #ifdef HAVE_GNUTLS
   caInput->value(rfb::CSecurityTLS::X509CA);
   crlInput->value(rfb::CSecurityTLS::X509CRL);
+  clientCertInput->value(rfb::CSecurityTLS::X509ClientCert);
+  clientKeyInput->value(rfb::CSecurityTLS::X509ClientKey);
 
   handleX509(encX509Checkbox, this);
 #endif
@@ -464,6 +466,8 @@ void OptionsDialog::storeOptions(void)
 
   rfb::CSecurityTLS::X509CA.setParam(caInput->value());
   rfb::CSecurityTLS::X509CRL.setParam(crlInput->value());
+  rfb::CSecurityTLS::X509ClientCert.setParam(clientCertInput->value());
+  rfb::CSecurityTLS::X509ClientKey.setParam(clientKeyInput->value());
 #endif
 
 #ifdef HAVE_NETTLE
@@ -826,6 +830,19 @@ void OptionsDialog::createSecurityPage(int tx, int ty, int tw, int th)
                             width - INDENT * 2, INPUT_HEIGHT,
                             _("Path to X509 CRL file"));
     crlInput->align(FL_ALIGN_LEFT | FL_ALIGN_TOP);
+    ty += INPUT_HEIGHT + TIGHT_MARGIN;
+
+    // Side by side, for want of room
+    ty += INPUT_LABEL_OFFSET;
+    int half = (width - INDENT * 2 - INNER_MARGIN) / 2;
+    clientCertInput = new Fl_Input(tx + INDENT, ty,
+                                   half, INPUT_HEIGHT,
+                                   _("X509 client certificate"));
+    clientCertInput->align(FL_ALIGN_LEFT | FL_ALIGN_TOP);
+    clientKeyInput = new Fl_Input(tx + INDENT + half + INNER_MARGIN, ty,
+                                  half, INPUT_HEIGHT,
+                                  _("Its private key, if separate"));
+    clientKeyInput->align(FL_ALIGN_LEFT | FL_ALIGN_TOP);
     ty += INPUT_HEIGHT + TIGHT_MARGIN;
 #endif
 #ifdef HAVE_NETTLE
@@ -1318,9 +1335,13 @@ void OptionsDialog::handleX509(Fl_Widget* /*widget*/, void *data)
   if (dialog->encX509Checkbox->value()) {
     dialog->caInput->activate();
     dialog->crlInput->activate();
+    dialog->clientCertInput->activate();
+    dialog->clientKeyInput->activate();
   } else {
     dialog->caInput->deactivate();
     dialog->crlInput->deactivate();
+    dialog->clientCertInput->deactivate();
+    dialog->clientKeyInput->deactivate();
   }
 #else
   (void)data;

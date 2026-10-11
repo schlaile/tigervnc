@@ -286,6 +286,21 @@ Path to a X509 certificate in PEM format to be used for all X509 based
 security types (X509None, X509Vnc, etc.).
 .
 .TP
+.B \-X509ClientCA \fIpath\fP
+Path to the certificate of the authority that issues client certificates, in
+PEM format. If set, viewers must present a certificate of this authority whose
+extended key usage names TLS client authentication; a server certificate of
+the same authority will not do. Only the X509 based security types are offered
+then, e.g. \fBX509None\fP when users log in on the desktop itself.
+\fBcontrib/vnc-ca\fP makes such an authority. Default is off.
+.
+.TP
+.B \-X509ClientCRL \fIpath\fP
+Path to a certificate revocation list for the client certificates of
+\fBX509ClientCA\fP, in PEM format. It is read for every connection, so that a
+new list applies at once.
+.
+.TP
 .B \-X509Key \fIpath\fP
 Private key counter part to the certificate given in \fBX509Cert\fP. Must
 also be in PEM format.

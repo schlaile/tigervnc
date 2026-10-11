@@ -23,6 +23,7 @@
 
 #include <stdexcept>
 
+#include <core/LogWriter.h>
 #include <core/i18n.h>
 #include <core/string.h>
 
@@ -42,6 +43,8 @@
 #endif
 
 using namespace rfb;
+
+static core::LogWriter vlog("SecurityServer");
 
 core::EnumListParameter SecurityServer::secTypes
 ("SecurityTypes",
@@ -69,6 +72,25 @@ core::EnumListParameter SecurityServer::secTypes
  "TLSVnc",
 #endif
  "VncAuth"});
+
+SecurityServer::SecurityServer(void) : Security(secTypes)
+{
+#ifdef HAVE_GNUTLS
+  // Clients must present a certificate, which only the X509 types ask
+  // for
+  if (SSecurityTLS::requireClientCert()) {
+    for (core::EnumListEntry type : secTypes) {
+      uint32_t typeNum = secTypeNum(type.getValueStr().c_str());
+      if (typeNum != secTypeX509None && typeNum != secTypeX509Vnc &&
+          typeNum != secTypeX509Plain)
+        DisableSecType(typeNum);
+    }
+    if (GetEnabledExtSecTypes().empty())
+      vlog.error(_("X509ClientCA is set, but no X509 security type is "
+                   "enabled"));
+  }
+#endif
+}
 
 SSecurity* SecurityServer::GetSSecurity(SConnection* sc, uint32_t secType)
 {
