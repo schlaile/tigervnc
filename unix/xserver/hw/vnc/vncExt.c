@@ -147,6 +147,10 @@ static int ProcVncExtSetParam(ClientPtr client)
   if (strcasecmp(param, "desktop") == 0)
     vncUpdateDesktopName();
 
+  // Announce the side channel for dropped files when it has changed
+  if (strcasecmp(param, "FileDropEndpoint") == 0)
+    vncUpdateFileDropEndpoint();
+
 deny:
   free(param);
   free(value);

@@ -188,6 +188,11 @@ namespace rfb {
     // server state.
     virtual void supportsLEDState();
 
+    // supportsDesktopEndpoint() is called the first time we detect that
+    // the client supports side-channel endpoints. The endpoints the
+    // desktop has set should be announced at this point.
+    virtual void supportsDesktopEndpoint();
+
     // authSuccess() is called when authentication has succeeded.
     virtual void authSuccess();
 

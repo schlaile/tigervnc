@@ -69,6 +69,7 @@ namespace rfb {
     bool readSetVMwareCursor(int width, int height,
                              const core::Point& hotspot);
     bool readSetDesktopName(int x, int y, int w, int h);
+    bool readDesktopEndpoint(int x, int y, int w, int h);
     bool readExtendedDesktopSize(int x, int y, int w, int h);
     bool readLEDState();
     bool readVMwareLEDState();

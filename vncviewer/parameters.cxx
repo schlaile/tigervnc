@@ -205,6 +205,22 @@ core::BoolParameter
             true);
 #endif
 
+#ifdef HAVE_GNUTLS
+core::BoolParameter
+  fileDrop("FileDrop",
+           _("Upload files dropped onto the viewer to the remote desktop, "
+             "if it accepts them"),
+           true);
+core::EnumParameter
+  fileDropOpen("FileDropOpen",
+               core::format(
+                 "%s (%s)",
+                 _("What to do when the remote desktop asks to open a "
+                   "document on this computer"),
+                 "Ask, Once, Always, Never").c_str(),
+               {"Ask", "Once", "Always", "Never"}, "Ask");
+#endif
+
 core::BoolParameter
   acceptClipboard("AcceptClipboard",
                   _("Accept clipboard changes from the server"),
@@ -274,6 +290,10 @@ static core::VoidParameter* parameterArray[] = {
   &shared,
 #ifdef HAVE_AUDIO
   &playAudio,
+#endif
+#ifdef HAVE_GNUTLS
+  &fileDrop,
+  &fileDropOpen,
 #endif
   /* Compression */
   &autoSelect,

@@ -123,6 +123,11 @@ private:
 
   bool pendingClientClipboard;
 
+  // A file drop: the position of FL_DND_RELEASE, the files come with
+  // the following FL_PASTE
+  bool pendingDrop;
+  core::Point dropPos;
+
   int clipboardSource;
 
   Fl_Menu_Button *contextMenu;

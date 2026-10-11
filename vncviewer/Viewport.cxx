@@ -51,6 +51,9 @@
 #include "fltk/util.h"
 #include "Viewport.h"
 #include "CConn.h"
+#ifdef HAVE_GNUTLS
+#include "FileDrop.h"
+#endif
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
 #include "parameters.h"
@@ -97,7 +100,7 @@ Viewport::Viewport(int w, int h, CConn* cc_)
   : Fl_Widget(0, 0, w, h), cc(cc_), frameBuffer(nullptr),
     lastPointerPos(0, 0), lastButtonMask(0),
     keyboard(nullptr), shortcutBypass(false), shortcutActive(false),
-    firstLEDState(true), pendingClientClipboard(false),
+    firstLEDState(true), pendingClientClipboard(false), pendingDrop(false),
     menuCtrlKey(false), menuAltKey(false), cursor(nullptr),
     cursorIsBlank(false)
 {
@@ -430,7 +433,36 @@ int Viewport::handle(int event)
   int buttonMask, wheelMask;
 
   switch (event) {
+#ifdef HAVE_GNUTLS
+  // Files dropped onto the viewer, if the desktop accepts them
+  case FL_DND_ENTER:
+  case FL_DND_DRAG:
+    return cc->getFileDrop() && cc->getFileDrop()->active();
+
+  case FL_DND_LEAVE:
+    return 1;
+
+  case FL_DND_RELEASE:
+    if (!cc->getFileDrop() || !cc->getFileDrop()->active())
+      return 0;
+    pendingDrop = true;
+    dropPos = {Fl::event_x() - x(), Fl::event_y() - y()};
+    return 1;
+#endif
+
   case FL_PASTE:
+#ifdef HAVE_GNUTLS
+    if (pendingDrop) {
+      pendingDrop = false;
+      std::vector<std::string> paths =
+        FileDrop::parseDrop(Fl::event_text(), Fl::event_length());
+      if (paths.empty())
+        cc->fileDropMessage(_("Only files can be dropped here"), true);
+      else
+        cc->getFileDrop()->drop(dropPos.x, dropPos.y, paths);
+      return 1;
+    }
+#endif
     if (!core::isValidUTF8(Fl::event_text(), Fl::event_length())) {
       vlog.error(_("Invalid UTF-8 sequence in clipboard"));
       // Reset the state as if we don't have any clipboard data at all

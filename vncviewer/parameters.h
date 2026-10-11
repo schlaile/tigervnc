@@ -67,6 +67,10 @@ extern core::BoolParameter shared;
 #ifdef HAVE_AUDIO
 extern core::BoolParameter playAudio;
 #endif
+#ifdef HAVE_GNUTLS
+extern core::BoolParameter fileDrop;
+extern core::EnumParameter fileDropOpen;
+#endif
 
 extern core::BoolParameter acceptClipboard;
 extern core::BoolParameter setPrimary;
