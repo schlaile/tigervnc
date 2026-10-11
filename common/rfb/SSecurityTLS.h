@@ -31,6 +31,7 @@
 #include <rfb/SSecurity.h>
 
 #include <gnutls/gnutls.h>
+#include <gnutls/x509.h>
 
 /* In GnuTLS 3.6.0 DH parameter generation was deprecated. RFC7919 is used instead.
  * GnuTLS before 3.6.0 doesn't know about RFC7919 so we will have to import it.
@@ -57,10 +58,19 @@ namespace rfb {
 
     static core::StringParameter X509_CertFile;
     static core::StringParameter X509_KeyFile;
+    static core::StringParameter X509_ClientCAFile;
+    static core::StringParameter X509_ClientCRLFile;
+
+    // Whether clients must present a certificate (X509ClientCA is set)
+    static bool requireClientCert();
+    // Whether the certificate names the purpose in its extended key
+    // usage
+    static bool checkPurpose(gnutls_x509_crt_t crt, const char* oid);
 
   protected:
     void shutdown();
     void setParams();
+    void checkClientCert();
 
   private:
     gnutls_session_t session;
