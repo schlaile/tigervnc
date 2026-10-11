@@ -7,6 +7,8 @@ TigerVNC master no longer supports):
   debian/patches/wws-file-drop-endpoint.patch   VNC File Drop (file-drop)
   debian/patches/wws-x509-client-ca.patch       client certificates
                                                 (client-cert)
+  debian/patches/wws-device-link.patch          VNC Device Link, server
+                                                side (device-link)
 
 This is the only stretch branch: every feature's backport goes here as a
 patch of its own (quilt, QUILT_PATCHES=debian/patches; unapply all before

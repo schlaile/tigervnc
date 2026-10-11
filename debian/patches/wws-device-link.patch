@@ -1,0 +1,2139 @@
+Description: Let applications of the desktop use devices of the viewer
+ VNC Device Link (https://ps.schlaile.de/tigervnc/spec/): with
+ -DeviceLink, Xvnc offers device links to viewers that support them.
+ Applications request devices on a control socket in DeviceLinkDir; a
+ serial device appears as a pseudo terminal, a tcp or tail device as a
+ Unix socket, and the bytes and settings go to the viewer that owns the
+ device links (the first one that may use the keyboard). Needs X server
+ 1.19 for its file descriptor notifications. Backport from
+ github.com/schlaile/tigervnc, branch device-link.
+Author: Peter Schlaile <peter@schlaile.de>
+--- /dev/null
++++ b/common/rfb/DeviceLink.h
+@@ -0,0 +1,106 @@
++/* Copyright 2026 Peter Schlaile
++ *
++ * This is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This software is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this software; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
++ * USA.
++ */
++
++// Constants of the DeviceLink messages (VNC Device Link, see
++// https://ps.schlaile.de/tigervnc/spec/).  Backport to TigerVNC 1.7.
++
++#ifndef __RFB_DEVICELINK_H__
++#define __RFB_DEVICELINK_H__
++
++#include <stddef.h>
++#include <stdint.h>
++
++namespace rfb {
++
++  const uint8_t deviceLinkVersion = 1;
++
++  // Subtypes
++  const uint8_t deviceLinkHello = 0;          // S->C
++  const uint8_t deviceLinkRequest = 1;        // S->C
++  const uint8_t deviceLinkRequestResult = 2;  // C->S
++  const uint8_t deviceLinkData = 3;           // both
++  const uint8_t deviceLinkCredit = 4;         // both
++  const uint8_t deviceLinkSetParams = 5;      // S->C
++  const uint8_t deviceLinkSetLines = 6;       // S->C
++  const uint8_t deviceLinkLineState = 7;      // C->S
++  const uint8_t deviceLinkPurge = 8;          // S->C
++  const uint8_t deviceLinkClose = 9;          // both
++  const uint8_t deviceLinkLock = 10;          // S->C
++  const uint8_t deviceLinkLockResult = 11;    // C->S
++  const uint8_t deviceLinkUnlock = 12;        // S->C
++
++  // Device kinds
++  const uint8_t deviceLinkSerial = 1;
++  const uint8_t deviceLinkTCP = 2;
++  const uint8_t deviceLinkTail = 3;
++
++  // Lock flags
++  const uint8_t deviceLinkLockWait = 1 << 0;
++
++  // RequestResult status
++  const uint8_t deviceLinkOpen = 0;
++  const uint8_t deviceLinkRefused = 1;
++  const uint8_t deviceLinkUnavailable = 2;
++  const uint8_t deviceLinkBusy = 3;
++  const uint8_t deviceLinkNotConfigured = 4;
++
++  // SetParams
++  const uint8_t deviceLinkParityNone = 0;
++  const uint8_t deviceLinkParityOdd = 1;
++  const uint8_t deviceLinkParityEven = 2;
++  const uint8_t deviceLinkParityMark = 3;
++  const uint8_t deviceLinkParitySpace = 4;
++  const uint8_t deviceLinkStopBits1 = 1;
++  const uint8_t deviceLinkStopBits2 = 2;
++  const uint8_t deviceLinkStopBits15 = 3;
++  const uint8_t deviceLinkFlowNone = 0;
++  const uint8_t deviceLinkFlowRTSCTS = 1;
++  const uint8_t deviceLinkFlowXONXOFF = 2;
++
++  // SetLines mask and values
++  const uint8_t deviceLinkDTR = 1 << 0;
++  const uint8_t deviceLinkRTS = 1 << 1;
++
++  // LineState lines and errors
++  const uint8_t deviceLinkCTS = 1 << 0;
++  const uint8_t deviceLinkDSR = 1 << 1;
++  const uint8_t deviceLinkRI = 1 << 2;
++  const uint8_t deviceLinkDCD = 1 << 3;
++  const uint8_t deviceLinkErrFraming = 1 << 0;
++  const uint8_t deviceLinkErrParity = 1 << 1;
++  const uint8_t deviceLinkErrOverrun = 1 << 2;
++  const uint8_t deviceLinkErrBreak = 1 << 3;
++
++  // Purge
++  const uint8_t deviceLinkPurgeReceive = 1 << 0;
++  const uint8_t deviceLinkPurgeTransmit = 1 << 1;
++
++  // Close reason
++  const uint8_t deviceLinkCloseNormal = 0;
++  const uint8_t deviceLinkCloseError = 1;
++  const uint8_t deviceLinkCloseWithdrawn = 2;
++
++  // Limits
++  const size_t deviceLinkMaxData = 4096;
++  const size_t deviceLinkMaxPayload = 1024;
++  const size_t deviceLinkMaxName = 32;
++  const uint32_t deviceLinkWindow = 65536;
++
++}
++
++#endif
+--- a/common/rfb/SDesktop.h
++++ b/common/rfb/SDesktop.h
+@@ -37,6 +37,8 @@
+ #ifndef __RFB_SDESKTOP_H__
+ #define __RFB_SDESKTOP_H__
+ 
++#include <stddef.h>
++
+ #include <rfb/PixelBuffer.h>
+ #include <rfb/VNCServer.h>
+ #include <rfb/InputHandler.h>
+@@ -76,6 +78,15 @@ namespace rfb {
+       return resultProhibited;
+     }
+ 
++    // deviceLinkOwnerChanged() is called when a client becomes the
++    // owner of the device links, or when the owner goes away.
++    virtual void deviceLinkOwnerChanged(bool present) {}
++
++    // handleDeviceLink() is called for every DeviceLink message from the
++    // owner of the device links.
++    virtual void handleDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                  const rdr::U8* data, size_t len) {}
++
+     // InputHandler interface
+     // pointerEvent(), keyEvent() and clientCutText() are called in response to
+     // the relevant RFB protocol messages from clients.
+--- a/common/rfb/SMsgHandler.cxx
++++ b/common/rfb/SMsgHandler.cxx
+@@ -43,10 +43,12 @@ void SMsgHandler::setPixelFormat(const P
+ void SMsgHandler::setEncodings(int nEncodings, const rdr::S32* encodings)
+ {
+   bool firstFence, firstContinuousUpdates, firstDesktopEndpoint;
++  bool firstDeviceLink;
+ 
+   firstFence = !cp.supportsFence;
+   firstContinuousUpdates = !cp.supportsContinuousUpdates;
+   firstDesktopEndpoint = !cp.supportsEncoding(pseudoEncodingDesktopEndpoint);
++  firstDeviceLink = !cp.supportsEncoding(pseudoEncodingDeviceLink);
+ 
+   cp.setEncodings(nEncodings, encodings);
+ 
+@@ -58,6 +60,8 @@ void SMsgHandler::setEncodings(int nEnco
+     supportsContinuousUpdates();
+   if (cp.supportsEncoding(pseudoEncodingDesktopEndpoint) && firstDesktopEndpoint)
+     supportsDesktopEndpoint();
++  if (cp.supportsEncoding(pseudoEncodingDeviceLink) && firstDeviceLink)
++    supportsDeviceLink();
+ }
+ 
+ void SMsgHandler::supportsLocalCursor()
+@@ -76,6 +80,15 @@ void SMsgHandler::supportsDesktopEndpoin
+ {
+ }
+ 
++void SMsgHandler::supportsDeviceLink()
++{
++}
++
++void SMsgHandler::handleDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                   const rdr::U8* data, size_t len)
++{
++}
++
+ void SMsgHandler::setDesktopSize(int fb_width, int fb_height,
+                                  const ScreenSet& layout)
+ {
+--- a/common/rfb/SMsgHandler.h
++++ b/common/rfb/SMsgHandler.h
+@@ -79,6 +79,15 @@ namespace rfb {
+     // desktop has set should be announced at this point.
+     virtual void supportsDesktopEndpoint();
+ 
++    // supportsDeviceLink() is called the first time we detect that the
++    // client supports device links. A Hello message should be sent at
++    // this point if the server offers them.
++    virtual void supportsDeviceLink();
++
++    // handleDeviceLink() is called for every DeviceLink message
++    virtual void handleDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                  const rdr::U8* data, size_t len);
++
+     ConnParams cp;
+   };
+ }
+--- a/common/rfb/SMsgReader.cxx
++++ b/common/rfb/SMsgReader.cxx
+@@ -17,8 +17,10 @@
+  * USA.
+  */
+ #include <stdio.h>
++#include <vector>
+ #include <rdr/InStream.h>
+ #include <rfb/msgTypes.h>
++#include <rfb/DeviceLink.h>
+ #include <rfb/Exception.h>
+ #include <rfb/util.h>
+ #include <rfb/SMsgHandler.h>
+@@ -78,6 +80,9 @@ void SMsgReader::readMsg()
+   case msgTypeClientCutText:
+     readClientCutText();
+     break;
++  case msgTypeDeviceLink:
++    readDeviceLink();
++    break;
+   default:
+     fprintf(stderr, "unknown message type %d\n", msgType);
+     throw Exception("unknown message type");
+@@ -179,6 +184,26 @@ void SMsgReader::readFence()
+   handler->fence(flags, len, data);
+ }
+ 
++void SMsgReader::readDeviceLink()
++{
++  rdr::U8 subtype;
++  rdr::U16 channel;
++  rdr::U32 len;
++
++  subtype = is->readU8();
++  channel = is->readU16();
++  len = is->readU32();
++
++  if (len > deviceLinkMaxData)
++    throw Exception("Too large device link message");
++
++  std::vector<rdr::U8> data(len);
++  if (len > 0)
++    is->readBytes(&data[0], len);
++
++  handler->handleDeviceLink(subtype, channel, len ? &data[0] : NULL, len);
++}
++
+ void SMsgReader::readKeyEvent()
+ {
+   bool down = is->readU8();
+--- a/common/rfb/SMsgReader.h
++++ b/common/rfb/SMsgReader.h
+@@ -50,6 +50,7 @@ namespace rfb {
+     void readEnableContinuousUpdates();
+ 
+     void readFence();
++    void readDeviceLink();
+ 
+     void readKeyEvent();
+     void readPointerEvent();
+--- a/common/rfb/SMsgWriter.cxx
++++ b/common/rfb/SMsgWriter.cxx
+@@ -21,6 +21,7 @@
+ #include <rdr/OutStream.h>
+ #include <rfb/msgTypes.h>
+ #include <rfb/fenceTypes.h>
++#include <rfb/DeviceLink.h>
+ #include <rfb/Exception.h>
+ #include <rfb/ConnParams.h>
+ #include <rfb/UpdateTracker.h>
+@@ -107,6 +108,23 @@ void SMsgWriter::writeFence(rdr::U32 fla
+   endMsg();
+ }
+ 
++void SMsgWriter::writeDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                 const rdr::U8* data, size_t len)
++{
++  if (!cp->supportsEncoding(pseudoEncodingDeviceLink))
++    throw Exception("Client does not support device links");
++  if (len > deviceLinkMaxData)
++    throw Exception("Too large device link message");
++
++  startMsg(msgTypeDeviceLink);
++  os->writeU8(subtype);
++  os->writeU16(channel);
++  os->writeU32(len);
++  if (len > 0)
++    os->writeBytes(data, len);
++  endMsg();
++}
++
+ void SMsgWriter::writeEndOfContinuousUpdates()
+ {
+   if (!cp->supportsContinuousUpdates)
+--- a/common/rfb/SMsgWriter.h
++++ b/common/rfb/SMsgWriter.h
+@@ -61,6 +61,10 @@ namespace rfb {
+     // writeFence() sends a new fence request or response to the client.
+     void writeFence(rdr::U32 flags, unsigned len, const char data[]);
+ 
++    // writeDeviceLink() sends a DeviceLink message to the client
++    void writeDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                         const rdr::U8* data, size_t len);
++
+     // writeEndOfContinuousUpdates() indicates that we have left continuous
+     // updates mode.
+     void writeEndOfContinuousUpdates();
+--- a/common/rfb/VNCSConnectionST.cxx
++++ b/common/rfb/VNCSConnectionST.cxx
+@@ -730,6 +730,38 @@ void VNCSConnectionST::enableContinuousU
+ // cursor, we make sure that the old server-side rendered cursor is cleaned up
+ // and the cursor is sent to the client.
+ 
++void VNCSConnectionST::writeDeviceLinkOrClose(rdr::U8 subtype,
++                                              rdr::U16 channel,
++                                              const rdr::U8* data,
++                                              size_t len)
++{
++  try {
++    if (state() != RFBSTATE_NORMAL)
++      return;
++    writer()->writeDeviceLink(subtype, channel, data, len);
++  } catch(rdr::Exception& e) {
++    close(e.str());
++  }
++}
++
++bool VNCSConnectionST::canOwnDeviceLinks()
++{
++  return state() == RFBSTATE_NORMAL &&
++         cp.supportsEncoding(pseudoEncodingDeviceLink) &&
++         (accessRights & AccessKeyEvents) && rfb::Server::acceptKeyEvents;
++}
++
++void VNCSConnectionST::supportsDeviceLink()
++{
++  server->deviceLinkClientReady(this);
++}
++
++void VNCSConnectionST::handleDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                        const rdr::U8* data, size_t len)
++{
++  server->handleDeviceLink(this, subtype, channel, data, len);
++}
++
+ void VNCSConnectionST::supportsDesktopEndpoint()
+ {
+   const std::list<DesktopEndpoint>& endpoints(server->getDesktopEndpoints());
+--- a/common/rfb/VNCSConnectionST.h
++++ b/common/rfb/VNCSConnectionST.h
+@@ -79,6 +79,12 @@ namespace rfb {
+     void serverCutTextOrClose(const char *str, int len);
+     void setDesktopNameOrClose(const char *name);
+     void setDesktopEndpointOrClose(const DesktopEndpoint& endpoint);
++    void writeDeviceLinkOrClose(rdr::U8 subtype, rdr::U16 channel,
++                                const rdr::U8* data, size_t len);
++
++    // canOwnDeviceLinks() is true if the client supports device links
++    // and may use the desktop
++    bool canOwnDeviceLinks();
+ 
+     // checkIdleTimeout() returns the number of milliseconds left until the
+     // idle timeout expires.  If it has expired, the connection is closed and
+@@ -146,6 +152,9 @@ namespace rfb {
+                                          int x, int y, int w, int h);
+     virtual void supportsLocalCursor();
+     virtual void supportsDesktopEndpoint();
++    virtual void supportsDeviceLink();
++    virtual void handleDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                  const rdr::U8* data, size_t len);
+     virtual void supportsFence();
+     virtual void supportsContinuousUpdates();
+ 
+--- a/common/rfb/VNCServer.h
++++ b/common/rfb/VNCServer.h
+@@ -86,6 +86,17 @@ namespace rfb {
+     // of the desktop, to be announced to clients that support it. An
+     // endpoint with an empty URL withdraws the service.
+     virtual void setDesktopEndpoint(const DesktopEndpoint& endpoint) = 0;
++
++    // enableDeviceLink() offers device links (VNC Device Link) to
++    // clients that support them, with at most maxChannels open at a
++    // time. The devices belong to one client, the owner; the desktop
++    // learns about it with SDesktop::deviceLinkOwnerChanged().
++    virtual void enableDeviceLink(unsigned maxChannels) = 0;
++
++    // sendDeviceLink() sends a DeviceLink message to the owner of the
++    // device links. It returns false if there is no owner.
++    virtual bool sendDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                const rdr::U8* data, size_t len) = 0;
+   };
+ }
+ #endif
+--- a/common/rfb/VNCServerST.cxx
++++ b/common/rfb/VNCServerST.cxx
+@@ -55,6 +55,7 @@
+ #include <rfb/VNCServerST.h>
+ #include <rfb/VNCSConnectionST.h>
+ #include <rfb/ComparingUpdateTracker.h>
++#include <rfb/DeviceLink.h>
+ #include <rfb/Security.h>
+ #include <rfb/KeyRemapper.h>
+ #include <rfb/util.h>
+@@ -81,7 +82,8 @@ rfb::BoolParameter alwaysSetDeferUpdateT
+ VNCServerST::VNCServerST(const char* name_, SDesktop* desktop_)
+   : blHosts(&blacklist), desktop(desktop_), desktopStarted(false),
+     blockCounter(0), pb(0),
+-    name(strDup(name_)), pointerClient(0), comparer(0),
++    name(strDup(name_)), pointerClient(0),
++    deviceLinkChannels(0), deviceLinkOwner(0), comparer(0),
+     renderedCursorInvalid(false),
+     queryConnectionHandler(0), keyRemapper(&KeyRemapper::defInstance),
+     lastConnectionTime(0), disableclients(false),
+@@ -146,9 +148,26 @@ void VNCServerST::removeSocket(network::
+   std::list<VNCSConnectionST*>::iterator ci;
+   for (ci = clients.begin(); ci != clients.end(); ci++) {
+     if ((*ci)->getSock() == sock) {
++      if (deviceLinkOwner == *ci) {
++        deviceLinkOwner = 0;
++        desktop->deviceLinkOwnerChanged(false);
++      }
++
+       // - Delete the per-Socket resources
+       delete *ci;
+ 
++      // - Hand the device links to the next client that can take them
++      if (deviceLinkOwner == 0 && deviceLinkChannels) {
++        std::list<VNCSConnectionST*>::iterator oi;
++        for (oi = clients.begin(); oi != clients.end(); oi++) {
++          if ((*oi)->canOwnDeviceLinks()) {
++            deviceLinkOwner = *oi;
++            desktop->deviceLinkOwnerChanged(true);
++            break;
++          }
++        }
++      }
++
+       // - Check that the desktop object is still required
+       if (authClientCount() == 0 && desktopStarted) {
+         slog.debug("no authenticated clients - stopping desktop");
+@@ -400,6 +419,52 @@ void VNCServerST::setName(const char* na
+   }
+ }
+ 
++void VNCServerST::enableDeviceLink(unsigned maxChannels)
++{
++  deviceLinkChannels = maxChannels;
++}
++
++bool VNCServerST::sendDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                 const rdr::U8* data, size_t len)
++{
++  if (deviceLinkOwner == 0)
++    return false;
++  deviceLinkOwner->writeDeviceLinkOrClose(subtype, channel, data, len);
++  return true;
++}
++
++void VNCServerST::deviceLinkClientReady(VNCSConnectionST* client)
++{
++  rdr::U8 hello[4];
++
++  if (!deviceLinkChannels)
++    return;
++  if (!client->canOwnDeviceLinks())
++    return;
++
++  hello[0] = deviceLinkVersion;
++  hello[1] = 0;
++  hello[2] = deviceLinkChannels >> 8;
++  hello[3] = deviceLinkChannels;
++  client->writeDeviceLinkOrClose(deviceLinkHello, 0, hello, sizeof(hello));
++
++  if (deviceLinkOwner == 0) {
++    deviceLinkOwner = client;
++    desktop->deviceLinkOwnerChanged(true);
++  }
++}
++
++void VNCServerST::handleDeviceLink(VNCSConnectionST* client,
++                                   rdr::U8 subtype, rdr::U16 channel,
++                                   const rdr::U8* data, size_t len)
++{
++  if (client != deviceLinkOwner) {
++    slog.debug("Ignoring device link message from a client that is not the owner");
++    return;
++  }
++  desktop->handleDeviceLink(subtype, channel, data, len);
++}
++
+ void VNCServerST::setDesktopEndpoint(const DesktopEndpoint& endpoint)
+ {
+   std::list<DesktopEndpoint>::iterator ei;
+--- a/common/rfb/VNCServerST.h
++++ b/common/rfb/VNCServerST.h
+@@ -139,6 +139,10 @@ namespace rfb {
+     const std::list<DesktopEndpoint>& getDesktopEndpoints() const
+       { return desktopEndpoints; }
+ 
++    virtual void enableDeviceLink(unsigned maxChannels);
++    virtual bool sendDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                const rdr::U8* data, size_t len);
++
+     // A QueryConnectionHandler, if supplied, is passed details of incoming
+     // connections to approve, reject, or query the user about.
+     //
+@@ -207,6 +211,11 @@ namespace rfb {
+ 
+     void startDesktop();
+ 
++    void deviceLinkClientReady(VNCSConnectionST* client);
++    void handleDeviceLink(VNCSConnectionST* client, rdr::U8 subtype,
++                          rdr::U16 channel, const rdr::U8* data,
++                          size_t len);
++
+     static LogWriter connectionsLog;
+     Blacklist blacklist;
+     Blacklist* blHosts;
+@@ -222,6 +231,9 @@ namespace rfb {
+ 
+     std::list<VNCSConnectionST*> clients;
+     VNCSConnectionST* pointerClient;
++
++    unsigned deviceLinkChannels;
++    VNCSConnectionST* deviceLinkOwner;
+     std::list<network::Socket*> closingSockets;
+ 
+     ComparingUpdateTracker* comparer;
+--- a/common/rfb/encodings.h
++++ b/common/rfb/encodings.h
+@@ -60,6 +60,10 @@ namespace rfb {
+   // until a number is registered
+   const int pseudoEncodingDesktopEndpoint = 0x46445031;
+ 
++  // Device links (VNC Device Link); private value until a number is
++  // registered
++  const int pseudoEncodingDeviceLink = 0x44564C31;
++
+   int encodingNum(const char* name);
+   const char* encodingName(int num);
+ }
+--- a/common/rfb/msgTypes.h
++++ b/common/rfb/msgTypes.h
+@@ -28,6 +28,10 @@ namespace rfb {
+ 
+   const int msgTypeEndOfContinuousUpdates = 150;
+ 
++  // Both directions (VNC Device Link); private value until a number
++  // is registered
++  const int msgTypeDeviceLink = 200;
++
+   const int msgTypeServerFence = 248;
+ 
+   // client to server
+--- /dev/null
++++ b/unix/xserver/hw/vnc/DeviceLinkHost.cxx
+@@ -0,0 +1,1208 @@
++/* Copyright 2026 Peter Schlaile
++ *
++ * This is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This software is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this software; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
++ * USA.
++ */
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#include <errno.h>
++#include <fcntl.h>
++#include <stdlib.h>
++#include <string.h>
++#include <termios.h>
++#include <unistd.h>
++#include <sys/ioctl.h>
++#include <sys/socket.h>
++#include <sys/stat.h>
++#include <sys/un.h>
++
++#include <sstream>
++#include <stdexcept>
++#include <vector>
++
++#include <rfb/LogWriter.h>
++
++#include <rfb/DeviceLink.h>
++#include <rfb/VNCServer.h>
++
++#include "DeviceLinkHost.h"
++
++using namespace rfb;
++
++static rfb::LogWriter vlog("DeviceLink");
++
++// Lines an application may send before we give up on it
++static const size_t maxLine = 1024;
++// Output we buffer for an application that does not read its events
++static const size_t maxControlOutput = 65536;
++
++struct DeviceLinkHost::Control {
++  Control(int fd_) : fd(fd_) {}
++  int fd;
++  std::string in, out;
++};
++
++struct DeviceLinkHost::Device {
++  Device()
++    : kind(0), control(nullptr), releasedBy(nullptr), lockedBy(nullptr),
++      lockPending(nullptr), unlockWhenLocked(false), channel(0),
++      state(Pending),
++      ptyFd(-1), slaveFd(-1), listenFd(-1), connFd(-1),
++      sendWindow(deviceLinkWindow),
++      termSpeed(0), termFlow(deviceLinkFlowNone),
++      speed(0), dataBits(8), parity(deviceLinkParityNone),
++      stopBits(deviceLinkStopBits1), flow(deviceLinkFlowNone) {}
++
++  std::string name;
++  std::string label;
++  uint8_t kind;
++  // nullptr once the application has released the device
++  Control* control;
++  // Waits for "ok NAME" once the viewer has closed the device
++  Control* releasedBy;
++  // The application that has locked the device, or waits for the lock;
++  // any application of the session may lock a requested device
++  Control* lockedBy;
++  Control* lockPending;
++  bool unlockWhenLocked;
++  uint16_t channel;
++  enum { Pending, Open, Closing } state;
++
++  int ptyFd, slaveFd;   // serial
++  int listenFd, connFd; // tcp, tail
++  std::string path;
++
++  // From the viewer, not yet taken by the application
++  std::string toApp;
++  // Bytes we may still send to the viewer
++  uint32_t sendWindow;
++
++  // Settings of the pseudo terminal when we last looked
++  uint32_t termSpeed;
++  uint8_t termFlow;
++
++  // Settings as last sent to the viewer
++  uint32_t speed;
++  uint8_t dataBits, parity, stopBits, flow;
++};
++
++static const struct {
++  speed_t code;
++  uint32_t speed;
++} speeds[] = {
++  { B50, 50 }, { B75, 75 }, { B110, 110 }, { B134, 134 },
++  { B150, 150 }, { B200, 200 }, { B300, 300 }, { B600, 600 },
++  { B1200, 1200 }, { B1800, 1800 }, { B2400, 2400 }, { B4800, 4800 },
++  { B9600, 9600 }, { B19200, 19200 }, { B38400, 38400 },
++  { B57600, 57600 }, { B115200, 115200 }, { B230400, 230400 },
++#ifdef B460800
++  { B460800, 460800 },
++#endif
++#ifdef B921600
++  { B921600, 921600 },
++#endif
++};
++
++static uint32_t speedOf(speed_t code)
++{
++  for (size_t i = 0; i < sizeof(speeds) / sizeof(speeds[0]); i++) {
++    if (speeds[i].code == code)
++      return speeds[i].speed;
++  }
++  return 0;
++}
++
++static bool validName(const std::string& name)
++{
++  if (name.empty() || name.size() > deviceLinkMaxName)
++    return false;
++  for (char c : name) {
++    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
++          c == '_' || c == '-'))
++      return false;
++  }
++  return true;
++}
++
++static void setNonBlock(int fd)
++{
++  fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
++  fcntl(fd, F_SETFD, FD_CLOEXEC);
++}
++
++static void makeDirs(const std::string& path)
++{
++  size_t pos = 0;
++
++  while ((pos = path.find('/', pos + 1)) != std::string::npos)
++    mkdir(path.substr(0, pos).c_str(), 0700);
++  if (mkdir(path.c_str(), 0700) != 0 && errno != EEXIST)
++    throw std::runtime_error("Cannot create " + path + ": " +
++                             strerror(errno));
++  chmod(path.c_str(), 0700);
++}
++
++static int listenUnix(const std::string& path)
++{
++  struct sockaddr_un addr;
++  int fd;
++
++  if (path.size() >= sizeof(addr.sun_path))
++    return -1;
++
++  fd = socket(AF_UNIX, SOCK_STREAM, 0);
++  if (fd < 0)
++    return -1;
++  setNonBlock(fd);
++
++  memset(&addr, 0, sizeof(addr));
++  addr.sun_family = AF_UNIX;
++  strcpy(addr.sun_path, path.c_str());
++
++  unlink(path.c_str());
++  if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0 ||
++      chmod(path.c_str(), 0600) != 0 || listen(fd, 4) != 0) {
++    close(fd);
++    unlink(path.c_str());
++    return -1;
++  }
++
++  return fd;
++}
++
++std::string DeviceLinkHost::defaultDir(const char* display)
++{
++  const char* runtime = getenv("XDG_RUNTIME_DIR");
++  std::string base;
++
++  if (runtime && runtime[0] == '/')
++    base = std::string(runtime) + "/vnc-device-link";
++  else
++    base = "/tmp/vnc-device-link-" + std::to_string(getuid());
++
++  return base + "/:" + display;
++}
++
++DeviceLinkHost::DeviceLinkHost(Watcher* watcher_, VNCServer* server_,
++                               const char* dir_, unsigned maxChannels_)
++  : watcher(watcher_), server(server_), dir(dir_),
++    maxChannels(maxChannels_), ownerPresent(false), listenFd(-1),
++    nextChannel(1)
++{
++  struct stat st;
++  std::string control;
++
++  makeDirs(dir);
++  if (lstat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode) ||
++      st.st_uid != getuid())
++    throw std::runtime_error(dir + " is not a directory of ours");
++
++  control = dir + "/control";
++  listenFd = listenUnix(control);
++  if (listenFd < 0)
++    throw std::runtime_error("Cannot listen on " + control + ": " +
++                             strerror(errno));
++  watcher->watchFd(listenFd, true, false);
++
++  server->enableDeviceLink(maxChannels);
++
++  vlog.info("Device links on %s", control.c_str());
++}
++
++DeviceLinkHost::~DeviceLinkHost()
++{
++  while (!channels.empty())
++    finish(channels.begin()->second);
++  while (!controls.empty())
++    closeControl(controls.front());
++
++  watcher->unwatchFd(listenFd);
++  close(listenFd);
++  unlink((dir + "/control").c_str());
++  rmdir(dir.c_str());
++}
++
++bool DeviceLinkHost::handleFdEvent(int fd, bool read, bool write)
++{
++  if (fd == listenFd) {
++    acceptControl();
++    return true;
++  }
++
++  for (Control* control : controls) {
++    if (control->fd == fd) {
++      handleControl(control, read, write);
++      return true;
++    }
++  }
++
++  for (auto& entry : channels) {
++    Device* device = entry.second;
++    if (fd == device->ptyFd || fd == device->listenFd ||
++        fd == device->connFd) {
++      handleDevice(device, fd, read, write);
++      return true;
++    }
++  }
++
++  return false;
++}
++
++// -=- Control socket
++
++void DeviceLinkHost::acceptControl()
++{
++  int fd;
++
++  fd = accept(listenFd, nullptr, nullptr);
++  if (fd < 0)
++    return;
++  setNonBlock(fd);
++
++  Control* control = new Control(fd);
++  controls.push_back(control);
++  watcher->watchFd(fd, true, false);
++
++  reply(control, ownerPresent ? "viewer present" : "viewer absent");
++}
++
++void DeviceLinkHost::handleControl(Control* control, bool read,
++                                   bool write)
++{
++  if (write && !control->out.empty()) {
++    ssize_t n = ::write(control->fd, control->out.data(),
++                        control->out.size());
++    if (n < 0 && errno != EAGAIN && errno != EINTR) {
++      closeControl(control);
++      return;
++    }
++    if (n > 0)
++      control->out.erase(0, n);
++    watcher->watchFd(control->fd, true, !control->out.empty());
++  }
++
++  if (!read)
++    return;
++
++  char buf[1024];
++  ssize_t n = ::read(control->fd, buf, sizeof(buf));
++  if (n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR)) {
++    closeControl(control);
++    return;
++  }
++  if (n < 0)
++    return;
++
++  control->in.append(buf, n);
++
++  size_t eol;
++  while ((eol = control->in.find('\n')) != std::string::npos) {
++    std::string line(control->in, 0, eol);
++    control->in.erase(0, eol + 1);
++    if (!line.empty() && line.back() == '\r')
++      line.pop_back();
++    handleCommand(control, line);
++    // The command may have closed the connection
++    bool alive = false;
++    for (Control* c : controls)
++      alive = alive || c == control;
++    if (!alive)
++      return;
++  }
++
++  if (control->in.size() > maxLine)
++    closeControl(control);
++}
++
++void DeviceLinkHost::reply(Control* control, const std::string& line)
++{
++  if (control->out.size() + line.size() > maxControlOutput) {
++    vlog.error("Application does not read its device link events");
++    closeControl(control);
++    return;
++  }
++  bool idle = control->out.empty();
++  control->out += line + "\n";
++  if (idle)
++    handleControl(control, false, true);
++}
++
++void DeviceLinkHost::broadcast(const std::string& line)
++{
++  std::list<Control*> all(controls);
++  for (Control* control : all)
++    reply(control, line);
++}
++
++void DeviceLinkHost::closeControl(Control* control)
++{
++  std::list<std::string> names;
++
++  for (auto& entry : devices) {
++    if (entry.second->control == control)
++      names.push_back(entry.first);
++  }
++  for (const std::string& name : names)
++    release(control, name, false);
++  for (auto& entry : channels) {
++    Device* device = entry.second;
++    if (device->releasedBy == control)
++      device->releasedBy = nullptr;
++    // A lock must not outlive its application
++    if (device->lockedBy == control)
++      unlock(device);
++    if (device->lockPending == control) {
++      device->lockPending = nullptr;
++      device->unlockWhenLocked = true;
++    }
++  }
++
++  watcher->unwatchFd(control->fd);
++  close(control->fd);
++  controls.remove(control);
++  delete control;
++}
++
++static bool parseFlag(const std::string& word, const char* name,
++                      bool* value)
++{
++  std::string prefix(std::string(name) + "=");
++  if (word.compare(0, prefix.size(), prefix) != 0)
++    return false;
++  std::string v(word, prefix.size());
++  if (v != "0" && v != "1")
++    return false;
++  *value = v == "1";
++  return true;
++}
++
++void DeviceLinkHost::handleCommand(Control* control,
++                                   const std::string& line)
++{
++  std::istringstream in(line);
++  std::string command, name;
++
++  in >> command >> name;
++  if (command.empty())
++    return;
++
++  if (command == "request") {
++    std::string kind, label;
++    in >> kind;
++    std::getline(in >> std::ws, label);
++    request(control, name, kind, label);
++    return;
++  }
++
++  if (command == "lock") {
++    // lock NAME [wait[=SECONDS]]
++    std::string option;
++    int wait = -1;
++    in >> option;
++    if (option == "wait") {
++      wait = 0;
++    } else if (option.compare(0, 5, "wait=") == 0) {
++      char* end;
++      unsigned long seconds = strtoul(option.c_str() + 5, &end, 10);
++      if (*end != '\0' || seconds == 0 || seconds > 65535) {
++        reply(control, "error " + name + " invalid wait");
++        return;
++      }
++      wait = seconds;
++    } else if (!option.empty()) {
++      reply(control, "error " + name + " invalid option");
++      return;
++    }
++    lock(control, name, wait);
++    return;
++  }
++
++  if (command == "unlock") {
++    auto it = devices.find(name);
++    if (it == devices.end() || it->second->lockedBy != control) {
++      reply(control, "error " + name + " not-locked");
++      return;
++    }
++    unlock(it->second);
++    reply(control, "ok " + name);
++    return;
++  }
++
++  if (command == "release") {
++    auto it = devices.find(name);
++    if (it == devices.end() || it->second->control != control) {
++      reply(control, "error " + name + " not-requested");
++      return;
++    }
++    // "ok" once the viewer has closed it, so that the device is free
++    // for other sessions when the application hears about it
++    release(control, name, true);
++    return;
++  }
++
++  Device* device = serialFor(control, name);
++  if (device == nullptr)
++    return;
++
++  std::string arg;
++  in >> arg;
++
++  if (command == "format") {
++    // 8N1, 7E1, 8N1.5 ...
++    static const char paritiesChars[] = "NOEMS";
++    const char* p;
++    if (arg.size() < 3 || arg[0] < '5' || arg[0] > '8' ||
++        (p = strchr(paritiesChars, arg[1])) == nullptr ||
++        (arg.substr(2) != "1" && arg.substr(2) != "2" &&
++         arg.substr(2) != "1.5")) {
++      reply(control, "error " + name + " invalid format");
++      return;
++    }
++    device->dataBits = arg[0] - '0';
++    device->parity = p - paritiesChars;
++    device->stopBits = arg.substr(2) == "1" ? deviceLinkStopBits1 :
++                       arg.substr(2) == "2" ? deviceLinkStopBits2 :
++                                              deviceLinkStopBits15;
++    sendParams(device, 2);
++  } else if (command == "speed") {
++    char* end;
++    unsigned long speed = strtoul(arg.c_str(), &end, 10);
++    if (arg.empty() || *end != '\0' || speed == 0 || speed > 0xffffffff) {
++      reply(control, "error " + name + " invalid speed");
++      return;
++    }
++    device->speed = speed;
++    sendParams(device, 1);
++  } else if (command == "flow") {
++    if (arg == "none")
++      device->flow = deviceLinkFlowNone;
++    else if (arg == "rtscts")
++      device->flow = deviceLinkFlowRTSCTS;
++    else if (arg == "xonxoff")
++      device->flow = deviceLinkFlowXONXOFF;
++    else {
++      reply(control, "error " + name + " invalid flow");
++      return;
++    }
++    sendParams(device, 4);
++  } else if (command == "lines") {
++    uint8_t msg[4] = { 0, 0, 0, 0 };
++    std::string word(arg);
++    do {
++      bool value;
++      if (parseFlag(word, "dtr", &value)) {
++        msg[0] |= deviceLinkDTR;
++        msg[1] |= value ? deviceLinkDTR : 0;
++      } else if (parseFlag(word, "rts", &value)) {
++        msg[0] |= deviceLinkRTS;
++        msg[1] |= value ? deviceLinkRTS : 0;
++      } else {
++        reply(control, "error " + name + " invalid lines");
++        return;
++      }
++    } while (in >> word);
++    send(deviceLinkSetLines, device->channel, msg, sizeof(msg));
++  } else if (command == "break") {
++    char* end;
++    unsigned long ms = strtoul(arg.c_str(), &end, 10);
++    if (arg.empty() || *end != '\0' || ms == 0 || ms > 65535) {
++      reply(control, "error " + name + " invalid break");
++      return;
++    }
++    uint8_t msg[4] = { 0, 0, (uint8_t)(ms >> 8), (uint8_t)ms };
++    send(deviceLinkSetLines, device->channel, msg, sizeof(msg));
++  } else if (command == "purge") {
++    uint8_t which;
++    if (arg == "receive")
++      which = deviceLinkPurgeReceive;
++    else if (arg == "transmit")
++      which = deviceLinkPurgeTransmit;
++    else if (arg == "both")
++      which = deviceLinkPurgeReceive | deviceLinkPurgeTransmit;
++    else {
++      reply(control, "error " + name + " invalid purge");
++      return;
++    }
++    send(deviceLinkPurge, device->channel, &which, 1);
++  } else {
++    reply(control, "error " + name + " unknown-command");
++    return;
++  }
++
++  reply(control, "ok " + name);
++}
++
++DeviceLinkHost::Device* DeviceLinkHost::serialFor(Control* control,
++                                                  const std::string& name)
++{
++  auto it = devices.find(name);
++  if (it == devices.end() || it->second->control != control ||
++      it->second->state != Device::Open) {
++    reply(control, "error " + name + " not-open");
++    return nullptr;
++  }
++  if (it->second->kind != deviceLinkSerial) {
++    reply(control, "error " + name + " not-serial");
++    return nullptr;
++  }
++  return it->second;
++}
++
++// -=- Requests
++
++void DeviceLinkHost::request(Control* control, const std::string& name,
++                             const std::string& kindName,
++                             const std::string& label)
++{
++  uint8_t kind;
++
++  if (!validName(name)) {
++    reply(control, "error " + name + " invalid name");
++    return;
++  }
++  if (kindName == "serial")
++    kind = deviceLinkSerial;
++  else if (kindName == "tcp")
++    kind = deviceLinkTCP;
++  else if (kindName == "tail")
++    kind = deviceLinkTail;
++  else {
++    reply(control, "error " + name + " invalid kind");
++    return;
++  }
++
++  if (!ownerPresent) {
++    reply(control, "error " + name + " no-viewer");
++    return;
++  }
++  if (devices.count(name)) {
++    reply(control, "error " + name + " busy");
++    return;
++  }
++  if (channels.size() >= maxChannels) {
++    reply(control, "error " + name + " too-many");
++    return;
++  }
++
++  while (nextChannel == 0 || channels.count(nextChannel))
++    nextChannel++;
++
++  Device* device = new Device;
++  device->name = name;
++  device->label = label.substr(0, 255);
++  device->kind = kind;
++  device->control = control;
++  device->channel = nextChannel++;
++  devices[name] = device;
++  channels[device->channel] = device;
++
++  std::vector<uint8_t> msg;
++  msg.push_back(kind);
++  msg.push_back(name.size());
++  msg.insert(msg.end(), name.begin(), name.end());
++  msg.push_back(device->label.size());
++  msg.insert(msg.end(), device->label.begin(), device->label.end());
++  // Flags, none yet
++  msg.push_back(0);
++  send(deviceLinkRequest, device->channel, msg.data(), msg.size());
++}
++
++void DeviceLinkHost::release(Control* control, const std::string& name,
++                             bool ack)
++{
++  auto it = devices.find(name);
++  if (it == devices.end())
++    return;
++
++  Device* device = it->second;
++  devices.erase(it);
++  device->control = nullptr;
++  if (ack)
++    device->releasedBy = control;
++  closeEndpoint(device);
++
++  if (!ownerPresent) {
++    finish(device);
++    return;
++  }
++
++  uint8_t reason = deviceLinkCloseNormal;
++  send(deviceLinkClose, device->channel, &reason, 1);
++  device->state = Device::Closing;
++}
++
++// -=- Devices
++
++bool DeviceLinkHost::openEndpoint(Device* device)
++{
++  device->path = dir + "/" + device->name;
++  unlink(device->path.c_str());
++
++  if (device->kind != deviceLinkSerial) {
++    device->listenFd = listenUnix(device->path);
++    return device->listenFd >= 0;
++  }
++
++  int master = posix_openpt(O_RDWR | O_NOCTTY);
++  if (master < 0)
++    return false;
++  setNonBlock(master);
++
++  const char* slaveName;
++  if (grantpt(master) != 0 || unlockpt(master) != 0 ||
++      (slaveName = ptsname(master)) == nullptr) {
++    close(master);
++    return false;
++  }
++  std::string slavePath(slaveName);
++
++  // We keep the slave open ourselves, so that the master does not hang
++  // up while no application has the device open
++  int slave = open(slavePath.c_str(), O_RDWR | O_NOCTTY);
++  if (slave < 0) {
++    close(master);
++    return false;
++  }
++  fcntl(slave, F_SETFD, FD_CLOEXEC);
++
++  // Raw like a serial port. EXTPROC makes the kernel tell us about
++  // every tcsetattr() of the application. Speed 0 means "not set", so
++  // that the first speed the application sets is reported.
++  struct termios tio;
++  tcgetattr(slave, &tio);
++  cfmakeraw(&tio);
++  tio.c_cflag |= CLOCAL | CREAD;
++  tio.c_lflag |= EXTPROC;
++  cfsetispeed(&tio, B0);
++  cfsetospeed(&tio, B0);
++  tcsetattr(slave, TCSANOW, &tio);
++
++  int one = 1;
++  if (ioctl(master, TIOCPKT, &one) != 0 ||
++      symlink(slavePath.c_str(), device->path.c_str()) != 0) {
++    close(slave);
++    close(master);
++    return false;
++  }
++
++  device->ptyFd = master;
++  device->slaveFd = slave;
++  device->termSpeed = 0;
++  device->termFlow = deviceLinkFlowNone;
++  return true;
++}
++
++void DeviceLinkHost::closeEndpoint(Device* device)
++{
++  int* fds[] = { &device->ptyFd, &device->slaveFd, &device->listenFd,
++                 &device->connFd };
++
++  for (int* fd : fds) {
++    if (*fd < 0)
++      continue;
++    if (fd != &device->slaveFd)
++      watcher->unwatchFd(*fd);
++    close(*fd);
++    *fd = -1;
++  }
++
++  if (!device->path.empty())
++    unlink(device->path.c_str());
++  device->path.clear();
++  device->toApp.clear();
++}
++
++void DeviceLinkHost::updateWatches(Device* device)
++{
++  bool open = device->state == Device::Open;
++  bool canSend = open && device->sendWindow > 0;
++  bool hasOutput = !device->toApp.empty();
++
++  if (device->ptyFd >= 0)
++    watcher->watchFd(device->ptyFd, canSend, hasOutput);
++  if (device->listenFd >= 0)
++    watcher->watchFd(device->listenFd, open, false);
++  if (device->connFd >= 0)
++    watcher->watchFd(device->connFd,
++                     canSend || device->kind == deviceLinkTail,
++                     hasOutput);
++}
++
++void DeviceLinkHost::handleDevice(Device* device, int fd, bool read,
++                                  bool write)
++{
++  if (fd == device->listenFd) {
++    int conn = accept(device->listenFd, nullptr, nullptr);
++    if (conn < 0)
++      return;
++    if (device->connFd >= 0) {
++      // One application at a time
++      close(conn);
++      return;
++    }
++    setNonBlock(conn);
++    device->connFd = conn;
++    updateWatches(device);
++    return;
++  }
++
++  if (write)
++    writeToApp(device);
++
++  if (read) {
++    if (fd == device->ptyFd)
++      readPty(device);
++    else
++      readConnection(device);
++  }
++}
++
++void DeviceLinkHost::readPty(Device* device)
++{
++  uint8_t buf[1 + deviceLinkMaxData];
++  size_t want = device->sendWindow;
++
++  if (want > deviceLinkMaxData)
++    want = deviceLinkMaxData;
++  if (want == 0)
++    return;
++
++  ssize_t n = ::read(device->ptyFd, buf, 1 + want);
++  if (n <= 0)
++    return;
++
++  if (buf[0] == TIOCPKT_DATA) {
++    forwardFromApp(device, buf + 1, n - 1);
++    return;
++  }
++
++  // A status packet: the application changed the terminal
++  if (buf[0] & TIOCPKT_FLUSHREAD) {
++    // The application discarded what the device sent
++    uint8_t which = deviceLinkPurgeReceive;
++    send(deviceLinkPurge, device->channel, &which, 1);
++  }
++  if (buf[0] & TIOCPKT_FLUSHWRITE) {
++    uint8_t which = deviceLinkPurgeTransmit;
++    send(deviceLinkPurge, device->channel, &which, 1);
++  }
++#ifdef TIOCPKT_IOCTL
++  if (buf[0] & TIOCPKT_IOCTL)
++    termiosChanged(device);
++#endif
++}
++
++void DeviceLinkHost::termiosChanged(Device* device)
++{
++  struct termios tio;
++  uint8_t mask = 0;
++
++  if (tcgetattr(device->ptyFd, &tio) != 0)
++    return;
++
++  uint32_t speed = speedOf(cfgetospeed(&tio));
++  uint8_t flow = deviceLinkFlowNone;
++  if (tio.c_cflag & CRTSCTS)
++    flow = deviceLinkFlowRTSCTS;
++  else if (tio.c_iflag & (IXON | IXOFF))
++    flow = deviceLinkFlowXONXOFF;
++
++  if (speed != 0 && speed != device->termSpeed) {
++    device->speed = speed;
++    mask |= 1;
++  }
++  if (flow != device->termFlow) {
++    device->flow = flow;
++    mask |= 4;
++  }
++  device->termSpeed = speed;
++  device->termFlow = flow;
++
++  if (mask)
++    sendParams(device, mask);
++
++  // Applications often clear all local flags; we need EXTPROC to hear
++  // about the next change
++  if (!(tio.c_lflag & EXTPROC)) {
++    tio.c_lflag |= EXTPROC;
++    tcsetattr(device->ptyFd, TCSANOW, &tio);
++  }
++}
++
++void DeviceLinkHost::readConnection(Device* device)
++{
++  uint8_t buf[deviceLinkMaxData];
++  size_t want = device->sendWindow;
++
++  if (want > sizeof(buf))
++    want = sizeof(buf);
++  // A tail device only sends; we read to notice the end
++  if (device->kind == deviceLinkTail)
++    want = sizeof(buf);
++  if (want == 0)
++    return;
++
++  ssize_t n = ::read(device->connFd, buf, want);
++  if (n < 0 && (errno == EAGAIN || errno == EINTR))
++    return;
++  if (n <= 0) {
++    watcher->unwatchFd(device->connFd);
++    close(device->connFd);
++    device->connFd = -1;
++    return;
++  }
++
++  if (device->kind != deviceLinkTail)
++    forwardFromApp(device, buf, n);
++}
++
++void DeviceLinkHost::forwardFromApp(Device* device, const uint8_t* data,
++                                    size_t len)
++{
++  if (len == 0)
++    return;
++  send(deviceLinkData, device->channel, data, len);
++  device->sendWindow -= len;
++  updateWatches(device);
++}
++
++void DeviceLinkHost::writeToApp(Device* device)
++{
++  int fd = device->kind == deviceLinkSerial ? device->ptyFd :
++                                              device->connFd;
++  if (fd < 0 || device->toApp.empty())
++    return;
++
++  ssize_t n = ::write(fd, device->toApp.data(), device->toApp.size());
++  if (n < 0 && errno != EAGAIN && errno != EINTR &&
++      device->kind != deviceLinkSerial) {
++    // The application went away; keep the data for the next one
++    watcher->unwatchFd(device->connFd);
++    close(device->connFd);
++    device->connFd = -1;
++    return;
++  }
++
++  if (n > 0) {
++    device->toApp.erase(0, n);
++    uint8_t credit[4] = { (uint8_t)(n >> 24), (uint8_t)(n >> 16),
++                          (uint8_t)(n >> 8), (uint8_t)n };
++    send(deviceLinkCredit, device->channel, credit, sizeof(credit));
++  }
++
++  updateWatches(device);
++}
++
++// Tells the application that it no longer has the device: "lost NAME",
++// "error NAME REASON"
++void DeviceLinkHost::lose(Device* device, const std::string& event,
++                          const std::string& detail)
++{
++  if (device->control != nullptr)
++    reply(device->control, event + " " + device->name +
++                           (detail.empty() ? "" : " " + detail));
++  devices.erase(device->name);
++  device->control = nullptr;
++  closeEndpoint(device);
++}
++
++void DeviceLinkHost::finish(Device* device)
++{
++  if (device->releasedBy != nullptr)
++    reply(device->releasedBy, "ok " + device->name);
++  if (device->lockPending != nullptr)
++    reply(device->lockPending, "error " + device->name + " not-open");
++
++  if (device->control != nullptr)
++    devices.erase(device->name);
++  closeEndpoint(device);
++  channels.erase(device->channel);
++  delete device;
++}
++
++// -=- Messages from the viewer
++
++void DeviceLinkHost::ownerChanged(bool present)
++{
++  ownerPresent = present;
++
++  if (!present) {
++    while (!channels.empty()) {
++      Device* device = channels.begin()->second;
++      if (device->state == Device::Pending)
++        lose(device, "error", "no-viewer");
++      else if (device->state == Device::Open)
++        lose(device, "lost", "");
++      finish(device);
++    }
++  }
++
++  broadcast(present ? "viewer present" : "viewer absent");
++}
++
++void DeviceLinkHost::handleMessage(uint8_t subtype, uint16_t channel,
++                                   const uint8_t* data, size_t len)
++{
++  auto it = channels.find(channel);
++  if (it == channels.end()) {
++    // Late messages for a channel that is gone are normal
++    vlog.debug("Ignoring device link message %d for channel %d",
++               subtype, channel);
++    return;
++  }
++  Device* device = it->second;
++
++  switch (subtype) {
++  case deviceLinkRequestResult:
++    handleRequestResult(device, data, len);
++    break;
++  case deviceLinkData:
++    handleData(device, data, len);
++    break;
++  case deviceLinkCredit:
++    handleCredit(device, data, len);
++    break;
++  case deviceLinkLineState:
++    handleLineState(device, data, len);
++    break;
++  case deviceLinkClose:
++    handleClose(device);
++    break;
++  case deviceLinkLockResult:
++    handleLockResult(device, data, len);
++    break;
++  default:
++    vlog.debug("Ignoring unknown device link message %d", subtype);
++  }
++}
++
++void DeviceLinkHost::handleRequestResult(Device* device,
++                                         const uint8_t* data, size_t len)
++{
++  static const char* reasons[] = {
++    "open", "refused", "unavailable", "busy", "not-configured"
++  };
++
++  if (device->state != Device::Pending || len < 3)
++    return;
++
++  uint8_t status = data[0];
++  size_t msgLen = (data[1] << 8) | data[2];
++  std::string message;
++  if (3 + msgLen <= len)
++    message.assign((const char*)data + 3, msgLen);
++  for (char& c : message) {
++    if (c == '\n' || c == '\r')
++      c = ' ';
++  }
++
++  if (status != deviceLinkOpen) {
++    // A refused request ends the channel without Close
++    std::string reason(status < sizeof(reasons) / sizeof(reasons[0]) ?
++                       reasons[status] : "unavailable");
++    if (!message.empty())
++      reason += " " + message;
++    lose(device, "error", reason);
++    finish(device);
++    return;
++  }
++
++  if (!openEndpoint(device)) {
++    vlog.error("Cannot create the endpoint for %s: %s",
++               device->name.c_str(), strerror(errno));
++    reply(device->control, "error " + device->name + " local-failure");
++    devices.erase(device->name);
++    device->control = nullptr;
++    closeEndpoint(device);
++    uint8_t reason = deviceLinkCloseError;
++    send(deviceLinkClose, device->channel, &reason, 1);
++    device->state = Device::Closing;
++    return;
++  }
++
++  device->state = Device::Open;
++  reply(device->control, "ok " + device->name + " " + device->path);
++  updateWatches(device);
++}
++
++void DeviceLinkHost::handleData(Device* device, const uint8_t* data,
++                                size_t len)
++{
++  if (device->state != Device::Open)
++    return;
++
++  if (device->toApp.size() + len > deviceLinkWindow) {
++    vlog.error("Viewer exceeded the window of %s", device->name.c_str());
++    lose(device, "lost", "");
++    uint8_t reason = deviceLinkCloseError;
++    send(deviceLinkClose, device->channel, &reason, 1);
++    device->state = Device::Closing;
++    return;
++  }
++
++  device->toApp.append((const char*)data, len);
++  writeToApp(device);
++}
++
++void DeviceLinkHost::handleCredit(Device* device, const uint8_t* data,
++                                  size_t len)
++{
++  if (len < 4)
++    return;
++  uint32_t credit = ((uint32_t)data[0] << 24) | (data[1] << 16) |
++                    (data[2] << 8) | data[3];
++  if (device->sendWindow + (uint64_t)credit > deviceLinkWindow)
++    device->sendWindow = deviceLinkWindow;
++  else
++    device->sendWindow += credit;
++  updateWatches(device);
++}
++
++void DeviceLinkHost::handleLineState(Device* device, const uint8_t* data,
++                                     size_t len)
++{
++  if (len < 2 || device->control == nullptr ||
++      device->state != Device::Open)
++    return;
++
++  uint8_t lines = data[0], errors = data[1];
++  std::string event("lines " + device->name);
++  event += std::string(" cts=") + (lines & deviceLinkCTS ? "1" : "0");
++  event += std::string(" dsr=") + (lines & deviceLinkDSR ? "1" : "0");
++  event += std::string(" ri=") + (lines & deviceLinkRI ? "1" : "0");
++  event += std::string(" dcd=") + (lines & deviceLinkDCD ? "1" : "0");
++  reply(device->control, event);
++
++  static const struct { uint8_t bit; const char* name; } errorNames[] = {
++    { deviceLinkErrFraming, "framing" }, { deviceLinkErrParity, "parity" },
++    { deviceLinkErrOverrun, "overrun" }, { deviceLinkErrBreak, "break" },
++  };
++  for (const auto& e : errorNames) {
++    if ((errors & e.bit) && device->control != nullptr)
++      reply(device->control,
++            std::string("error ") + device->name + " " + e.name);
++  }
++}
++
++void DeviceLinkHost::handleClose(Device* device)
++{
++  if (device->state != Device::Closing) {
++    if (device->state == Device::Pending)
++      lose(device, "error", "closed");
++    else
++      lose(device, "lost", "");
++    uint8_t reason = deviceLinkCloseNormal;
++    send(deviceLinkClose, device->channel, &reason, 1);
++  }
++  finish(device);
++}
++
++void DeviceLinkHost::send(uint8_t subtype, uint16_t channel,
++                          const uint8_t* data, size_t len)
++{
++  server->sendDeviceLink(subtype, channel, data, len);
++}
++
++void DeviceLinkHost::sendParams(Device* device, uint8_t mask)
++{
++  uint8_t msg[9];
++
++  msg[0] = mask;
++  msg[1] = device->speed >> 24;
++  msg[2] = device->speed >> 16;
++  msg[3] = device->speed >> 8;
++  msg[4] = device->speed;
++  msg[5] = device->dataBits;
++  msg[6] = device->parity;
++  msg[7] = device->stopBits;
++  msg[8] = device->flow;
++  send(deviceLinkSetParams, device->channel, msg, sizeof(msg));
++}
++
++// -=- Locks
++
++void DeviceLinkHost::lock(Control* control, const std::string& name,
++                          int wait)
++{
++  auto it = devices.find(name);
++  if (it == devices.end() || it->second->state != Device::Open) {
++    reply(control, "error " + name + " not-open");
++    return;
++  }
++
++  Device* device = it->second;
++  if (device->lockedBy == control) {
++    reply(control, "ok " + name);
++    return;
++  }
++  if (device->lockedBy != nullptr || device->lockPending != nullptr) {
++    // Another application of this session; the viewer decides between
++    // sessions
++    reply(control, "error " + name + " busy this session");
++    return;
++  }
++
++  uint8_t msg[3] = { (uint8_t)(wait >= 0 ? deviceLinkLockWait : 0),
++                     (uint8_t)((wait > 0 ? wait : 0) >> 8),
++                     (uint8_t)(wait > 0 ? wait : 0) };
++  device->lockPending = control;
++  device->unlockWhenLocked = false;
++  send(deviceLinkLock, device->channel, msg, sizeof(msg));
++}
++
++void DeviceLinkHost::unlock(Device* device)
++{
++  device->lockedBy = nullptr;
++  send(deviceLinkUnlock, device->channel, nullptr, 0);
++}
++
++void DeviceLinkHost::handleLockResult(Device* device, const uint8_t* data,
++                                      size_t len)
++{
++  if (len < 3 || device->state != Device::Open)
++    return;
++
++  uint8_t status = data[0];
++  size_t msgLen = (data[1] << 8) | data[2];
++  std::string message;
++  if (3 + msgLen <= len)
++    message.assign((const char*)data + 3, msgLen);
++  for (char& c : message) {
++    if (c == '\n' || c == '\r')
++      c = ' ';
++  }
++
++  Control* control = device->lockPending;
++  device->lockPending = nullptr;
++
++  if (status != deviceLinkOpen) {
++    if (control != nullptr)
++      reply(control, "error " + device->name + " busy" +
++                     (message.empty() ? "" : " " + message));
++    return;
++  }
++
++  if (control == nullptr || device->unlockWhenLocked) {
++    // The application went away meanwhile
++    device->unlockWhenLocked = false;
++    unlock(device);
++    return;
++  }
++  device->lockedBy = control;
++  reply(control, "ok " + device->name);
++}
+--- /dev/null
++++ b/unix/xserver/hw/vnc/DeviceLinkHost.h
+@@ -0,0 +1,131 @@
++/* Copyright 2026 Peter Schlaile
++ *
++ * This is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This software is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this software; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
++ * USA.
++ */
++
++//
++// DeviceLinkHost - the desktop side of device links (VNC Device Link,
++// see https://ps.schlaile.de/tigervnc/spec/).  Backport to TigerVNC 1.7.
++//
++// Applications of the desktop request devices on a control socket. A
++// serial device appears as a pseudo terminal, a tcp or tail device as
++// a Unix socket. The bytes and settings go to the viewer that owns the
++// device links as DeviceLink messages.
++//
++
++#ifndef __DEVICELINKHOST_H__
++#define __DEVICELINKHOST_H__
++
++#include <stddef.h>
++#include <stdint.h>
++
++#include <list>
++#include <map>
++#include <string>
++
++namespace rfb { class VNCServer; }
++
++class DeviceLinkHost {
++public:
++  // The event loop of the server, which watches file descriptors
++  class Watcher {
++  public:
++    virtual ~Watcher() {}
++    virtual void watchFd(int fd, bool read, bool write) = 0;
++    virtual void unwatchFd(int fd) = 0;
++  };
++
++  // Creates the directory dir with the control socket in it
++  DeviceLinkHost(Watcher* watcher, rfb::VNCServer* server,
++                 const char* dir, unsigned maxChannels);
++  ~DeviceLinkHost();
++
++  // handleFdEvent() returns false if fd is not one of ours
++  bool handleFdEvent(int fd, bool read, bool write);
++
++  // From the VNC server
++  void ownerChanged(bool present);
++  void handleMessage(uint8_t subtype, uint16_t channel,
++                     const uint8_t* data, size_t len);
++
++  // The default directory for display, under $XDG_RUNTIME_DIR
++  static std::string defaultDir(const char* display);
++
++private:
++  struct Control;
++  struct Device;
++
++  // Control socket
++  void acceptControl();
++  void handleControl(Control* control, bool read, bool write);
++  void handleCommand(Control* control, const std::string& line);
++  void reply(Control* control, const std::string& line);
++  void broadcast(const std::string& line);
++  void closeControl(Control* control);
++
++  // Commands
++  void request(Control* control, const std::string& name,
++               const std::string& kind, const std::string& label);
++  // wait: -1 no, 0 until free, else seconds
++  void lock(Control* control, const std::string& name, int wait);
++  void unlock(Device* device);
++  // ack: answer "ok NAME" on control once the viewer has closed it
++  void release(Control* control, const std::string& name, bool ack);
++  Device* serialFor(Control* control, const std::string& name);
++
++  // Devices
++  bool openEndpoint(Device* device);
++  void closeEndpoint(Device* device);
++  void handleDevice(Device* device, int fd, bool read, bool write);
++  void readPty(Device* device);
++  void readConnection(Device* device);
++  void forwardFromApp(Device* device, const uint8_t* data, size_t len);
++  void writeToApp(Device* device);
++  void termiosChanged(Device* device);
++  void updateWatches(Device* device);
++  void lose(Device* device, const std::string& event,
++            const std::string& detail);
++  void finish(Device* device);
++
++  // Messages from the viewer
++  void handleRequestResult(Device* device, const uint8_t* data,
++                           size_t len);
++  void handleData(Device* device, const uint8_t* data, size_t len);
++  void handleCredit(Device* device, const uint8_t* data, size_t len);
++  void handleLineState(Device* device, const uint8_t* data, size_t len);
++  void handleClose(Device* device);
++  void handleLockResult(Device* device, const uint8_t* data, size_t len);
++
++  void send(uint8_t subtype, uint16_t channel,
++            const uint8_t* data, size_t len);
++  void sendParams(Device* device, uint8_t mask);
++
++  Watcher* watcher;
++  rfb::VNCServer* server;
++  std::string dir;
++  unsigned maxChannels;
++  bool ownerPresent;
++
++  int listenFd;
++  std::list<Control*> controls;
++
++  // Devices by name, and by channel including those being closed
++  std::map<std::string, Device*> devices;
++  std::map<uint16_t, Device*> channels;
++  uint16_t nextChannel;
++};
++
++#endif
+--- a/unix/xserver/hw/vnc/Makefile.am
++++ b/unix/xserver/hw/vnc/Makefile.am
+@@ -13,11 +13,11 @@ noinst_LTLIBRARIES = libvnccommon.la
+ HDRS = vncExtInit.h vncHooks.h \
+ 	vncBlockHandler.h XorgGlue.h \
+ 	XserverDesktop.h xorg-version.h \
+-	Input.h RFBGlue.h
++	Input.h RFBGlue.h DeviceLinkHost.h
+ 
+ libvnccommon_la_SOURCES = $(HDRS) vncExt.c vncExtInit.cc vncHooks.c \
+ 	vncBlockHandler.c XorgGlue.c RFBGlue.cc XserverDesktop.cc \
+-	Input.c InputXKB.c
++	Input.c InputXKB.c DeviceLinkHost.cxx
+ 
+ libvnccommon_la_CPPFLAGS = -DVENDOR_RELEASE="$(VENDOR_RELEASE)" \
+ 	-DVENDOR_STRING="\"$(VENDOR_STRING)\"" -I$(TIGERVNC_SRCDIR)/common -UHAVE_CONFIG_H \
+--- a/unix/xserver/hw/vnc/XserverDesktop.cc
++++ b/unix/xserver/hw/vnc/XserverDesktop.cc
+@@ -111,6 +111,13 @@ static void HandleSocketFd(int fd, int x
+   desktop->handleSocketFd(fd, xevents);
+ }
+ 
++static void HandleDeviceLinkFd(int fd, int xevents, void *data)
++{
++  XserverDesktop *desktop = (XserverDesktop *)data;
++
++  desktop->handleDeviceLinkFd(fd, xevents);
++}
++
+ }
+ #endif
+ 
+@@ -124,6 +131,7 @@ XserverDesktop::XserverDesktop(int scree
+     server(0), httpServer(0),
+     listeners(listeners_), httpListeners(httpListeners_),
+     deferredUpdateTimerSet(false), shadowFramebuffer(NULL),
++    deviceLink(NULL),
+     queryConnectId(0)
+ {
+   format = pf;
+@@ -152,6 +160,7 @@ XserverDesktop::XserverDesktop(int scree
+ 
+ XserverDesktop::~XserverDesktop()
+ {
++  delete deviceLink;
+   while (!listeners.empty()) {
+ #if XORG >= 119
+     RemoveNotifyFd(listeners.back()->getFd());
+@@ -373,6 +382,49 @@ void XserverDesktop::setDesktopEndpoint(
+   }
+ }
+ 
++void XserverDesktop::enableDeviceLink(const char* dir,
++                                      unsigned maxChannels)
++{
++#if XORG >= 119
++  try {
++    deviceLink = new DeviceLinkHost(this, server, dir, maxChannels);
++  } catch (std::exception& e) {
++    vlog.error("Unable to offer device links: %s", e.what());
++  }
++#else
++  vlog.error("Device links need X server 1.19 or later");
++#endif
++}
++
++void XserverDesktop::deviceLinkOwnerChanged(bool present)
++{
++  if (deviceLink)
++    deviceLink->ownerChanged(present);
++}
++
++void XserverDesktop::handleDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                      const rdr::U8* data, size_t len)
++{
++  if (deviceLink)
++    deviceLink->handleMessage(subtype, channel, data, len);
++}
++
++void XserverDesktop::watchFd(int fd, bool read, bool write)
++{
++#if XORG >= 119
++  SetNotifyFd(fd, HandleDeviceLinkFd,
++              (read ? X_NOTIFY_READ : 0) | (write ? X_NOTIFY_WRITE : 0),
++              this);
++#endif
++}
++
++void XserverDesktop::unwatchFd(int fd)
++{
++#if XORG >= 119
++  RemoveNotifyFd(fd);
++#endif
++}
++
+ void XserverDesktop::setCursor(int width, int height, int hotX, int hotY,
+                                const unsigned char *rgbaData)
+ {
+@@ -516,6 +568,19 @@ void XserverDesktop::handleSocketFd(int
+   }
+ }
+ 
++void XserverDesktop::handleDeviceLinkFd(int fd, int xevents)
++{
++  try {
++    if (deviceLink)
++      deviceLink->handleFdEvent(fd, xevents & X_NOTIFY_READ,
++                                xevents & X_NOTIFY_WRITE);
++  } catch (std::exception& e) {
++    vlog.error("XserverDesktop::handleDeviceLinkFd: %s", e.what());
++  } catch (rdr::Exception& e) {
++    vlog.error("XserverDesktop::handleDeviceLinkFd: %s", e.str());
++  }
++}
++
+ void XserverDesktop::blockHandler(int* timeout)
+ {
+   // We don't have a good callback for when we can init input devices[1],
+--- a/unix/xserver/hw/vnc/XserverDesktop.h
++++ b/unix/xserver/hw/vnc/XserverDesktop.h
+@@ -40,6 +40,7 @@
+ #include <rdr/SubstitutingInStream.h>
+ #include "Input.h"
+ #include "xorg-version.h"
++#include "DeviceLinkHost.h"
+ 
+ namespace rfb {
+   class VNCServerST;
+@@ -49,7 +50,8 @@ namespace network { class TcpListener; c
+ 
+ class XserverDesktop : public rfb::SDesktop, public rfb::FullFramePixelBuffer,
+                        public rdr::Substitutor,
+-                       public rfb::VNCServerST::QueryConnectionHandler {
++                       public rfb::VNCServerST::QueryConnectionHandler,
++                       public DeviceLinkHost::Watcher {
+ public:
+ 
+   XserverDesktop(int screenIndex,
+@@ -68,6 +70,7 @@ public:
+   void serverCutText(const char* str, int len);
+   void setDesktopName(const char* name);
+   void setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint);
++  void enableDeviceLink(const char* dir, unsigned maxChannels);
+   void setCursor(int width, int height, int hotX, int hotY,
+                  const unsigned char *rgbaData);
+   void add_changed(const rfb::Region &region);
+@@ -75,6 +78,7 @@ public:
+ #if XORG >= 119
+   void handleListenFd(int fd);
+   void handleSocketFd(int fd, int xevents);
++  void handleDeviceLinkFd(int fd, int xevents);
+   void blockHandler(int* timeout);
+ #else
+   void readBlockHandler(fd_set* fds, struct timeval ** timeout);
+@@ -104,6 +108,13 @@ public:
+   virtual rfb::Point getFbSize() { return rfb::Point(width(), height()); }
+   virtual unsigned int setScreenLayout(int fb_width, int fb_height,
+                                        const rfb::ScreenSet& layout);
++  virtual void deviceLinkOwnerChanged(bool present);
++  virtual void handleDeviceLink(rdr::U8 subtype, rdr::U16 channel,
++                                const rdr::U8* data, size_t len);
++
++  // DeviceLinkHost::Watcher callbacks
++  virtual void watchFd(int fd, bool read, bool write);
++  virtual void unwatchFd(int fd);
+ 
+   // rfb::PixelBuffer callbacks
+   virtual void grabRegion(const rfb::Region& r);
+@@ -126,6 +137,7 @@ private:
+   std::list<network::TcpListener*> httpListeners;
+   bool deferredUpdateTimerSet;
+   rdr::U8* shadowFramebuffer;
++  DeviceLinkHost* deviceLink;
+   struct timeval dixTimeout;
+ 
+   uint32_t queryConnectId;
+--- a/unix/xserver/hw/vnc/Xvnc.man
++++ b/unix/xserver/hw/vnc/Xvnc.man
+@@ -40,6 +40,22 @@ replace the host of the URL with the hos
+ withdraws the endpoint. Default is empty.
+ .
+ .TP
++.B \-DeviceLink
++Let applications of the desktop use serial ports, network devices and files of
++the viewer's machine, if the viewer supports it (VNC Device Link).
++Applications request devices on the control socket in \fBDeviceLinkDir\fP.
++Default is off.
++.
++.TP
++.B \-DeviceLinkDir \fIdirectory\fP
++Directory for the device link control socket and the devices. Default is
++\fI$XDG_RUNTIME_DIR/vnc-device-link/:N\fP, with N the display number.
++.
++.TP
++.B \-DeviceLinkChannels \fInumber\fP
++Maximum number of devices open at a time. Default is 16.
++.
++.TP
+ .B \-geometry \fIwidth\fPx\fIheight\fP
+ Specify the size of the desktop to be created. Default is 1024x768.
+ .
+--- a/unix/xserver/hw/vnc/vncExtInit.cc
++++ b/unix/xserver/hw/vnc/vncExtInit.cc
+@@ -77,6 +77,17 @@ rfb::StringParameter desktopName("deskto
+ rfb::StringParameter fileDropEndpoint("FileDropEndpoint",
+                                       "Side channel for files dropped onto the viewer, set by "
+                                       "the desktop session: [samehost ]URL TOKEN", "");
++rfb::BoolParameter deviceLinkEnabled("DeviceLink",
++                                     "Let applications use serial ports, network "
++                                     "devices and files of the viewer's machine",
++                                     false);
++rfb::StringParameter deviceLinkDir("DeviceLinkDir",
++                                   "Directory for the device link control socket and "
++                                   "devices, default $XDG_RUNTIME_DIR/vnc-device-link/:N",
++                                   "");
++rfb::IntParameter deviceLinkChannels("DeviceLinkChannels",
++                                     "Maximum number of devices open at a time",
++                                     16, 1, 65535);
+ rfb::BoolParameter localhostOnly("localhost",
+                                  "Only allow connections from localhost",
+                                  false);
+@@ -230,6 +241,14 @@ void vncExtensionInit(void)
+         if (endpointStr.buf[0] != '\0')
+           vncUpdateFileDropEndpoint();
+ 
++        if (scr == 0 && deviceLinkEnabled) {
++          CharArray dirStr(deviceLinkDir.getData());
++          std::string dir(dirStr.buf);
++          if (dir.empty())
++            dir = DeviceLinkHost::defaultDir(vncGetDisplay());
++          desktop[scr]->enableDeviceLink(dir.c_str(), deviceLinkChannels);
++        }
++
+         if (scr == 0 && vncInetdSock != -1 && listeners.empty()) {
+           network::Socket* sock = new network::TcpSocket(vncInetdSock);
+           desktop[scr]->addClient(sock, false);
