@@ -61,3 +61,4 @@ CVE-2019-15693.patch
 CVE-2019-15694.patch
 CVE-2019-15695.patch
 wws-file-drop-endpoint.patch
+wws-x509-client-ca.patch

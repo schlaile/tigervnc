@@ -1,0 +1,290 @@
+Description: Let Xvnc take only viewers with a client certificate
+ X509ClientCA and X509ClientCRL: the server asks for a client certificate
+ and takes only certificates of that authority whose extended key usage
+ names TLS client authentication. Only the X509 security types are offered
+ then. Backport from github.com/schlaile/tigervnc, branch client-cert.
+Author: Peter Schlaile <peter@schlaile.de>
+Index: tigervnc-stretch-pkg/common/rfb/SSecurityTLS.cxx
+===================================================================
+--- tigervnc-stretch-pkg.orig/common/rfb/SSecurityTLS.cxx
++++ tigervnc-stretch-pkg/common/rfb/SSecurityTLS.cxx
+@@ -28,10 +28,14 @@
+ #endif
+ 
+ #include <stdlib.h>
++#include <string.h>
++
++#include <string>
+ 
+ #include <rfb/SSecurityTLS.h>
+ #include <rfb/SConnection.h>
+ #include <rfb/LogWriter.h>
++#include <rfb/util.h>
+ #include <rfb/Exception.h>
+ #include <rdr/TLSInStream.h>
+ #include <rdr/TLSOutStream.h>
+@@ -46,8 +50,23 @@ StringParameter SSecurityTLS::X509_CertF
+ StringParameter SSecurityTLS::X509_KeyFile
+ ("X509Key", "Path to the key of the X509 certificate in PEM format", "", ConfServer);
+ 
++StringParameter SSecurityTLS::X509_ClientCAFile
++("X509ClientCA", "Path to the X509 certificate of the authority that issues "
++ "client certificates. If set, clients must present a certificate of this "
++ "authority, and only the X509 security types are offered", "", ConfServer);
++
++StringParameter SSecurityTLS::X509_ClientCRLFile
++("X509ClientCRL", "Path to the X509 certificate revocation list for client "
++ "certificates", "", ConfServer);
++
+ static LogWriter vlog("TLS");
+ 
++bool SSecurityTLS::requireClientCert()
++{
++  CharArray ca(X509_ClientCAFile.getData());
++  return ca.buf[0] != '\0';
++}
++
+ SSecurityTLS::SSecurityTLS(bool _anon) : session(0), dh_params(0),
+ 						 anon_cred(0), cert_cred(0),
+ 						 anon(_anon), fis(0), fos(0)
+@@ -153,9 +172,93 @@ bool SSecurityTLS::processMsg(SConnectio
+ 
+   sc->setStreams(fis = tlsis, fos = tlsos);
+ 
++  // After switching streams, so that the client gets our reason
++  // through the session
++  if (!anon && requireClientCert())
++    checkClientCert();
++
+   return true;
+ }
+ 
++void SSecurityTLS::checkClientCert()
++{
++  gnutls_typed_vdata_st purpose;
++  const gnutls_datum_t* cert_list;
++  unsigned int cert_list_size = 0;
++  unsigned int status;
++  gnutls_x509_crt_t crt;
++  gnutls_datum_t dn;
++  std::string name;
++
++  // Refusals go to the client as the security result, with the reason,
++  // rather than as a TLS alert
++  cert_list = gnutls_certificate_get_peers(session, &cert_list_size);
++  if (cert_list_size == 0 ||
++      gnutls_certificate_type_get(session) != GNUTLS_CRT_X509)
++    throw AuthFailureException("No client certificate");
++
++  // GnuTLS rejects certificates whose extended key usage leaves out
++  // client authentication; checkPurpose() also rejects those without
++  // one, so that no server certificate of our authority will do
++  purpose.type = GNUTLS_DT_KEY_PURPOSE_OID;
++  purpose.data = (unsigned char*)GNUTLS_KP_TLS_WWW_CLIENT;
++  purpose.size = 0;
++  if (gnutls_certificate_verify_peers(session, &purpose, 1,
++                                      &status) != GNUTLS_E_SUCCESS)
++    throw AuthFailureException("Client certificate verification failed");
++
++  if (gnutls_x509_crt_init(&crt) != GNUTLS_E_SUCCESS)
++    throw AuthFailureException("gnutls_x509_crt_init failed");
++  if (gnutls_x509_crt_import(crt, &cert_list[0],
++                             GNUTLS_X509_FMT_DER) != GNUTLS_E_SUCCESS) {
++    gnutls_x509_crt_deinit(crt);
++    throw AuthFailureException("Failed to decode client certificate");
++  }
++
++  if (status == 0 && !checkPurpose(crt, GNUTLS_KP_TLS_WWW_CLIENT))
++    status = GNUTLS_CERT_INVALID | GNUTLS_CERT_PURPOSE_MISMATCH;
++
++  if (gnutls_x509_crt_get_dn3(crt, &dn, 0) == GNUTLS_E_SUCCESS) {
++    name = (const char*)dn.data;
++    gnutls_free(dn.data);
++  }
++  gnutls_x509_crt_deinit(crt);
++
++  if (status != 0) {
++    gnutls_datum_t status_str;
++    std::string reason;
++
++    if (gnutls_certificate_verification_status_print(
++          status, GNUTLS_CRT_X509, &status_str, 0) == GNUTLS_E_SUCCESS) {
++      reason = (const char*)status_str.data;
++      gnutls_free(status_str.data);
++    }
++    vlog.error("Client certificate %s rejected: %s", name.c_str(),
++               reason.c_str());
++    reason = "Client certificate rejected: " + reason;
++    throw AuthFailureException(reason.c_str());
++  }
++
++  vlog.info("Client certificate %s accepted", name.c_str());
++}
++
++bool SSecurityTLS::checkPurpose(gnutls_x509_crt_t crt, const char* oid)
++{
++  for (unsigned int i = 0; ; i++) {
++    char buf[128];
++    size_t size = sizeof(buf);
++    int err;
++
++    err = gnutls_x509_crt_get_key_purpose_oid(crt, i, buf, &size, NULL);
++    if (err == GNUTLS_E_SHORT_MEMORY_BUFFER)
++      continue;
++    if (err != GNUTLS_E_SUCCESS)
++      return false;
++    if (strcmp(buf, oid) == 0)
++      return true;
++  }
++}
++
+ void SSecurityTLS::setParams(gnutls_session_t session)
+ {
+   static const char kx_anon_priority[] = ":+ANON-ECDH:+ANON-DH";
+@@ -211,10 +314,32 @@ void SSecurityTLS::setParams(gnutls_sess
+         GNUTLS_X509_FMT_PEM) != GNUTLS_E_SUCCESS)
+       throw AuthFailureException("load of key failed");
+ 
++    if (requireClientCert()) {
++      CharArray ca(X509_ClientCAFile.getData());
++      CharArray crl(X509_ClientCRLFile.getData());
++
++      // Read for every connection, so that a new revocation list
++      // applies at once
++      if (gnutls_certificate_set_x509_trust_file(cert_cred, ca.buf,
++          GNUTLS_X509_FMT_PEM) < 1)
++        throw AuthFailureException("load of the certificate authority for "
++                                   "client certificates failed");
++
++      if (crl.buf[0] != '\0' &&
++          gnutls_certificate_set_x509_crl_file(cert_cred, crl.buf,
++            GNUTLS_X509_FMT_PEM) < 0)
++        throw AuthFailureException("load of the certificate revocation "
++                                   "list for client certificates failed");
++    }
++
+     if (gnutls_credentials_set(session, GNUTLS_CRD_CERTIFICATE, cert_cred)
+         != GNUTLS_E_SUCCESS)
+       throw AuthFailureException("gnutls_credentials_set failed");
+ 
++    // Checked ourselves after the handshake, to tell the client why
++    if (requireClientCert())
++      gnutls_certificate_server_set_request(session, GNUTLS_CERT_REQUEST);
++
+     vlog.debug("X509 session has been set");
+ 
+   }
+Index: tigervnc-stretch-pkg/common/rfb/SSecurityTLS.h
+===================================================================
+--- tigervnc-stretch-pkg.orig/common/rfb/SSecurityTLS.h
++++ tigervnc-stretch-pkg/common/rfb/SSecurityTLS.h
+@@ -35,6 +35,7 @@
+ #include <rdr/InStream.h>
+ #include <rdr/OutStream.h>
+ #include <gnutls/gnutls.h>
++#include <gnutls/x509.h>
+ 
+ namespace rfb {
+ 
+@@ -48,10 +49,19 @@ namespace rfb {
+ 
+     static StringParameter X509_CertFile;
+     static StringParameter X509_KeyFile;
++    static StringParameter X509_ClientCAFile;
++    static StringParameter X509_ClientCRLFile;
++
++    // Whether clients must present a certificate (X509ClientCA is set)
++    static bool requireClientCert();
++    // Whether the certificate names the purpose in its extended key
++    // usage
++    static bool checkPurpose(gnutls_x509_crt_t crt, const char* oid);
+ 
+   protected:
+     void shutdown();
+     void setParams(gnutls_session_t session);
++    void checkClientCert();
+ 
+   private:
+     gnutls_session_t session;
+Index: tigervnc-stretch-pkg/common/rfb/SecurityServer.cxx
+===================================================================
+--- tigervnc-stretch-pkg.orig/common/rfb/SecurityServer.cxx
++++ tigervnc-stretch-pkg/common/rfb/SecurityServer.cxx
+@@ -23,6 +23,8 @@
+ 
+ #include <rdr/Exception.h>
+ #include <rfb/Security.h>
++#include <rfb/LogWriter.h>
++#include <rfb/util.h>
+ #include <rfb/SSecurityNone.h>
+ #include <rfb/SSecurityStack.h>
+ #include <rfb/SSecurityPlain.h>
+@@ -49,6 +51,29 @@ StringParameter SecurityServer::secTypes
+ #endif
+ ConfServer);
+ 
++static LogWriter vlog("SecurityServer");
++
++SecurityServer::SecurityServer(void) : Security(secTypes)
++{
++#ifdef HAVE_GNUTLS
++  // Clients must present a certificate, which only the X509 types ask
++  // for
++  if (SSecurityTLS::requireClientCert()) {
++    CharArray types(secTypes.getData());
++    std::list<U32> list = parseSecTypes(types.buf);
++    std::list<U32>::iterator i;
++    for (i = list.begin(); i != list.end(); ++i) {
++      if (*i != secTypeX509None && *i != secTypeX509Vnc &&
++          *i != secTypeX509Plain)
++        DisableSecType(*i);
++    }
++    if (GetEnabledExtSecTypes().empty())
++      vlog.error("X509ClientCA is set, but no X509 security type is "
++                 "enabled");
++  }
++#endif
++}
++
+ SSecurity* SecurityServer::GetSSecurity(U32 secType)
+ {
+   if (!IsSupported(secType))
+Index: tigervnc-stretch-pkg/common/rfb/SecurityServer.h
+===================================================================
+--- tigervnc-stretch-pkg.orig/common/rfb/SecurityServer.h
++++ tigervnc-stretch-pkg/common/rfb/SecurityServer.h
+@@ -29,7 +29,7 @@ namespace rfb {
+ 
+   class SecurityServer : public Security {
+   public:
+-    SecurityServer(void) : Security(secTypes) {}
++    SecurityServer(void);
+ 
+     /* Create server side SSecurity class instance */
+     SSecurity* GetSSecurity(rdr::U32 secType);
+Index: tigervnc-stretch-pkg/unix/xserver/hw/vnc/Xvnc.man
+===================================================================
+--- tigervnc-stretch-pkg.orig/unix/xserver/hw/vnc/Xvnc.man
++++ tigervnc-stretch-pkg/unix/xserver/hw/vnc/Xvnc.man
+@@ -227,6 +227,21 @@ Path to a X509 certificate in PEM format
+ security types (X509None, X509Vnc, etc.).
+ .
+ .TP
++.B \-X509ClientCA \fIpath\fP
++Path to the certificate of the authority that issues client certificates, in
++PEM format. If set, viewers must present a certificate of this authority whose
++extended key usage names TLS client authentication; a server certificate of
++the same authority will not do. Only the X509 based security types are offered
++then, e.g. \fBX509None\fP when users log in on the desktop itself.
++Default is off.
++.
++.TP
++.B \-X509ClientCRL \fIpath\fP
++Path to a certificate revocation list for the client certificates of
++\fBX509ClientCA\fP, in PEM format. It is read for every connection, so that a
++new list applies at once.
++.
++.TP
+ .B \-X509Key \fIpath\fP
+ Private key counter part to the certificate given in \fBX509Cert\fP. Must
+ also be in PEM format.

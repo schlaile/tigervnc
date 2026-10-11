@@ -1,3 +1,11 @@
+tigervnc (1.7.0+dfsg-7+deb9u1+wws2) stretch; urgency=medium
+
+  * Xvnc parameters X509ClientCA and X509ClientCRL: take only viewers with
+    a client certificate of that authority (backport from
+    github.com/schlaile/tigervnc, branch client-cert).
+
+ -- Peter Schlaile <peter@schlaile.de>  Sun, 11 Oct 2026 16:45:59 +0200
+
 tigervnc (1.7.0+dfsg-7+deb9u1+wws1) stretch; urgency=medium
 
   * Announce the side channel of VNC File Drop: DesktopEndpoint
