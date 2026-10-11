@@ -56,13 +56,16 @@ public:
   void handleMessage(uint8_t subtype, uint16_t channel,
                      const uint8_t* data, size_t len);
 
+  // Main thread: whether the viewer window has the keyboard focus; data
+  // of a shared device that no session has locked goes to the viewer
+  // with the focus
+  static void setFocus(bool focused);
+
 private:
   struct Channel;
 
   void handleRequest(uint16_t id, const uint8_t* data, size_t len);
   void handleClose(Channel* channel);
-  void queueOp(Channel* channel, uint8_t subtype, const uint8_t* data,
-               size_t len);
 
   // Main thread, from a timer: the user decides about requests
   enum Decision { Yes, No, NeedsUser };
@@ -72,13 +75,13 @@ private:
   Decision askUser(Channel* channel, DeviceLinkTarget* target,
                    std::string* message, uint8_t* status);
   void closeDialog(uint16_t id);
-  void acquire(Channel* channel, const DeviceLinkTarget& target);
   void start(Channel* channel, const DeviceLinkTarget& target);
 
   // Main thread, from a timer: what the threads did
   static void handlePoll(void* data);
   void poll();
 
+  void sendFromDevice(Channel* channel);
   void stop(Channel* channel);
   void erase(Channel* channel);
 
@@ -86,8 +89,6 @@ private:
             size_t len);
   void result(uint16_t channel, uint8_t status, const std::string& message);
 
-  static void readLoop(Channel* channel);
-  static void writeLoop(Channel* channel);
 
   CConn* cc;
   bool helloReceived;

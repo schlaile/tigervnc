@@ -120,7 +120,7 @@ bytes, other payloads at most 1024.
 | Subtype | Direction | Name | Payload |
 |---|---|---|---|
 | 0 | S→C | `Hello` | U8 version (1), U8 flags (0), U16 maximum number of open channels |
-| 1 | S→C | `Request` | U8 kind, U8 name-length, name, U8 label-length, label (UTF-8), U8 flags, U16 wait seconds |
+| 1 | S→C | `Request` | U8 kind, U8 name-length, name, U8 label-length, label (UTF-8), U8 flags (0) |
 | 2 | C→S | `RequestResult` | U8 status, U16 message-length, message (UTF-8) |
 | 3 | both | `Data` | bytes |
 | 4 | both | `Credit` | U32 additional bytes the sender may send on *channel* |
@@ -129,11 +129,14 @@ bytes, other payloads at most 1024.
 | 7 | C→S | `LineState` | U8 lines, U8 errors |
 | 8 | S→C | `Purge` | U8 which (1 receive, 2 transmit, 3 both) |
 | 9 | both | `Close` | U8 reason |
+| 10 | S→C | `Lock` | U8 flags (bit 0 wait), U16 seconds to wait (0: as long as it takes) |
+| 11 | C→S | `LockResult` | U8 status (0 locked, 3 busy), U16 message-length, message (UTF-8) |
+| 12 | S→C | `Unlock` | none |
 
-`Request` flags: bit 0 *wait*: if another session on the viewer's computer
-uses the device, the viewer answers only when it is free, after at most the
-given number of seconds (0: until the server sends `Close`), instead of
-answering `busy` at once.
+`Lock` asks for the device for this session alone, for example for a
+sale (see [Sharing a device between
+sessions](#sharing-a-device-between-sessions)). Without *wait* the client
+answers at once; with it, when the device is free or the time is up.
 
 Kind: 1 `serial`, 2 `tcp`, 3 `tail`. Names are 1 to 32 characters of
 `[a-z0-9_-]`; the label is shown to the user ("Customer display").
@@ -189,9 +192,12 @@ no-viewer`; the application requests again after `viewer present`. Other
 errors are `refused`, `unavailable`, `busy`, `not-configured` (each followed by
 the viewer's message, if any), `too-many`, `invalid` and `closed`.
 
-With `request NAME KIND wait[=SECONDS] LABEL` the viewer waits while
-another session uses the device (see [Sharing a device between
-sessions](#sharing-a-device-between-sessions)).
+`lock NAME [wait[=SECONDS]]` locks a requested device for this session
+(see [Sharing a device between sessions](#sharing-a-device-between-sessions))
+and is answered with `ok NAME` or `error NAME busy WHO`; `unlock NAME` gives
+it back. Any application of the session may lock a requested device, one at
+a time; the lock ends with `unlock`, with the application that holds it, or
+with the device.
 
 The path is a symbolic link to the terminal device (`serial`) or a Unix
 socket (`tcp`, `tail`). It stays valid while the control connection is open;
@@ -211,7 +217,7 @@ program with `{}` replaced by the path, and releases the device when the
 program ends:
 
 ```
-vnc-device cardreader serial --label Kartenleser --wait -- \
+vnc-device cardreader serial --label Kartenleser --keep -- \
     perl rs2000_33w.pl {} rtscts
 ```
 
@@ -271,17 +277,36 @@ viewer becomes the owner; applications request their devices again.
 ### Sharing a device between sessions
 
 Two sessions may each have a viewer on the same computer, for example two
-point-of-sale desktops side by side with one card reader. A device is then
-held only between `request` and `release`: the session that is closing a sale
-requests the card reader, the other one gets `busy` (with the session that
-has it, as far as the viewer knows) or, with `wait`, gets the card reader as
-soon as it is released.
+point-of-sale desktops side by side with one card reader. Both request the
+card reader and keep it, as a single session would; the device must not see
+the change between the sessions, since many devices reset when their port is
+closed and opened again (DTR and RTS drop when a serial port is closed).
 
-The viewers of a computer coordinate through a lock file per local device
-(serial port or network address; files that are followed are not locked), in
-the viewer's state directory. The lock goes away with the viewer, even if it
-crashes. On Windows only one process can open the lock file for writing; on
-other systems it is locked with `flock`.
+The first viewer on the computer that needs the device opens it and keeps it
+open while any session uses it; it is the *host*. The other viewers are its
+*guests*: they connect to the host on 127.0.0.1, with the port and a secret
+that the host writes into the lock file of the device, instead of opening the
+device. The lock file is in the viewer's state directory, one per serial port
+or network address; only one process can have it (open for writing on
+Windows, `flock` elsewhere), and it goes away with the viewer, even if the
+viewer crashes. Files that are followed are not shared: every viewer reads
+them itself.
+
+What the device says goes to one session:
+
+1. the session that has locked the device (`lock NAME`), else
+2. the session whose viewer window has the keyboard focus, else
+3. the session whose viewer had the focus last.
+
+What a session writes goes to the device, unless another session has the
+lock: then it is dropped (and counts as written), so that a driver that
+restarts in one session cannot reset the card reader during a sale in the
+other. A point-of-sale application locks the card reader for the sale with
+`lock cardreader wait=30` and unlocks it afterwards; a second session that
+asks meanwhile waits, or is told which session has it.
+
+When the host's viewer ends, its guests lose the device (`lost`); the next
+request opens it again, in the viewer that asks first.
 
 ## Viewer behaviour
 

@@ -39,14 +39,17 @@ namespace rfb {
   const uint8_t deviceLinkLineState = 7;      // C->S
   const uint8_t deviceLinkPurge = 8;          // S->C
   const uint8_t deviceLinkClose = 9;          // both
+  const uint8_t deviceLinkLock = 10;          // S->C
+  const uint8_t deviceLinkLockResult = 11;    // C->S
+  const uint8_t deviceLinkUnlock = 12;        // S->C
 
   // Device kinds
   const uint8_t deviceLinkSerial = 1;
   const uint8_t deviceLinkTCP = 2;
   const uint8_t deviceLinkTail = 3;
 
-  // Request flags
-  const uint8_t deviceLinkRequestWait = 1 << 0;
+  // Lock flags
+  const uint8_t deviceLinkLockWait = 1 << 0;
 
   // RequestResult status
   const uint8_t deviceLinkOpen = 0;

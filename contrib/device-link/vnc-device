@@ -26,8 +26,11 @@ the command ends. If the device is lost (unplugged, viewer gone), the
 command is stopped and, with --keep, started again once the device is
 back.
 
-  vnc-device cardreader serial --label Kartenleser --wait -- \\
+  vnc-device cardreader serial --label Kartenleser --keep -- \\
       perl rs2000_33w.pl {} rtscts
+
+Sessions that share the device with other sessions on the viewer's
+computer lock it for a while with "lock NAME" on the control socket.
 """
 
 import argparse
@@ -104,10 +107,6 @@ def main():
     parser.add_argument("name")
     parser.add_argument("kind", choices=["serial", "tcp", "tail"])
     parser.add_argument("--label", help="what the user is told")
-    parser.add_argument("--wait", nargs="?", const=0, type=int,
-                        metavar="SECONDS",
-                        help="wait while another session uses the device "
-                             "(without SECONDS: as long as it takes)")
     parser.add_argument("--keep", action="store_true",
                         help="start the command again after the device was "
                              "lost, instead of ending")
@@ -123,10 +122,8 @@ def main():
 
     control = Control(os.path.join(args.dir or default_dir(), "control"))
 
-    request = "request %s %s" % (args.name, args.kind)
-    if args.wait is not None:
-        request += " wait" + ("=%d" % args.wait if args.wait else "")
-    request += " " + (args.label or args.name)
+    request = "request %s %s %s" % (args.name, args.kind,
+                                    args.label or args.name)
 
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(143))
 
