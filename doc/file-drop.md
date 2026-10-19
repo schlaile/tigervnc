@@ -8,8 +8,10 @@ Pseudo-encoding number: to be assigned (see [Registration](#registration)).
 A user drags a file from the local desktop onto the viewer window. The
 application under the drop position on the remote desktop decides whether it
 wants the file. If it does, the viewer uploads the file, and the application
-receives it. In the other direction, an application on the remote desktop can
-ask the viewer to open a document on the local machine.
+receives it. Links dragged from a local browser are offered the same way;
+the application takes them itself, nothing is uploaded. In the other
+direction, an application on the remote desktop can ask the viewer to open a
+document on the local machine.
 
 The RFB protocol carries only one small new thing: the server announces where
 the desktop's *file drop endpoint* is (an HTTPS URL and a token). Everything
@@ -198,6 +200,48 @@ the user, in the desktop's language.
 the SHA-256): the client does not upload it and reports it as done. Clients
 that do not know a result treat it like `reject`.
 
+### Links
+
+A drop from a browser often carries no file but an address: a picture or a
+video on a web page, or a link. The client offers `http` and `https` URLs in
+`links`, next to `files` (which may be empty):
+
+```json
+{
+  "x": 312, "y": 140,
+  "files": [],
+  "links": [{"url": "https://shop.example/media/9f2c….jpg"}]
+}
+```
+
+The receiver answers each link in `links`, in the order of the request:
+
+```json
+{
+  "files": [],
+  "links": [
+    {"result": "accept", "message": "Video added to article 4711"},
+    {"result": "reject", "reason": "Only addresses of our shop"}
+  ]
+}
+```
+
+- `accept`: the receiver has taken the link. There is nothing to upload.
+  `message` is optional, a short text for the user in the desktop's
+  language.
+- `reject` with `reason`, as for files.
+
+The client sends `links` only when there are links, so a receiver that does
+not know them sees offers as before. If an answer has no `links`, the client
+reports the links as not accepted.
+
+A link is only an address. What it means is up to the application: an
+address of its own media can name something it has already (then nothing is
+fetched at all), others it may fetch itself or reject. A receiver that
+fetches addresses should restrict them to hosts it knows: the address comes
+from the client, and the receiver should not become a way into networks the
+client cannot reach.
+
 `upload.token` may be empty when the URL carries its own authorisation (an
 unguessable upload URL of a media server); the client then sends no
 `Authorization` header with the upload.
@@ -249,7 +293,10 @@ the client stops until the next announcement.
   size, and an expiry. The receiver accepts nothing that was not offered and
   accepted. Content that does not match is discarded.
 - **What the desktop learns.** The file name, size, type and hash, and only
-  for files the user dropped. The viewer never offers files on its own.
+  for files the user dropped; the address of a dropped link. The viewer
+  never offers files or links on its own.
+- **Links.** A receiver must not fetch any address it is given: see
+  [Links](#links).
 - **Opening documents.** A desktop could try to make the client open
   something harmful. Hence: only `http(s)`, the user's consent, and only the
   system's default handler.
@@ -261,7 +308,9 @@ the client stops until the next announcement.
 
 - Drops are accepted only while an endpoint is announced. The viewer shows
   progress per file and an error on rejection or failure.
-- Several files in one drop go into one offer.
+- Several files in one drop go into one offer, with the links of the drop.
+- A drop of anything else (plain text, a file that cannot be read) is
+  refused as a whole.
 - Directories are not offered (version 1).
 - A setting turns the feature off. Another one controls `open`: ask every
   time, ask once per endpoint, or never open.

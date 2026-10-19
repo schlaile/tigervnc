@@ -454,12 +454,13 @@ int Viewport::handle(int event)
 #ifdef HAVE_GNUTLS
     if (pendingDrop) {
       pendingDrop = false;
-      std::vector<std::string> paths =
-        FileDrop::parseDrop(Fl::event_text(), Fl::event_length());
-      if (paths.empty())
-        cc->fileDropMessage(_("Only files can be dropped here"), true);
+      std::vector<std::string> paths, links;
+      if (!FileDrop::parseDrop(Fl::event_text(), Fl::event_length(),
+                               &paths, &links))
+        cc->fileDropMessage(_("Only files and links can be dropped here"),
+                            true);
       else
-        cc->getFileDrop()->drop(dropPos.x, dropPos.y, paths);
+        cc->getFileDrop()->drop(dropPos.x, dropPos.y, paths, links);
       return 1;
     }
 #endif

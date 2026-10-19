@@ -166,9 +166,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             result.append({"result": "accept",
                            "upload": {"url": "/files/" + uid,
                                       "token": utoken}})
-        self.log_message("offer at %s,%s: %d file(s)",
-                         offer.get("x"), offer.get("y"), len(files))
-        self.json_reply(200, {"files": result})
+        # links: nothing to save; said so instead of left out
+        links = offer.get("links") or []
+        self.log_message("offer at %s,%s: %d file(s), %d link(s)",
+                         offer.get("x"), offer.get("y"), len(files),
+                         len(links))
+        reply = {"files": result}
+        if links:
+            reply["links"] = [{"result": "reject",
+                               "reason": "Only files are saved here"}
+                              for _ in links]
+        self.json_reply(200, reply)
 
     def do_GET(self):
         if self.path != "/desktop/events":

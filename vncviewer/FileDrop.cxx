@@ -371,6 +371,18 @@ bool isHttpURL(const std::string& url)
          url.compare(0, 8, "https://") == 0;
 }
 
+// The server part of an URL, enough to tell where it points (share
+// links are long and say nothing more to a person)
+std::string shortURL(const std::string& url)
+{
+  size_t start = url.find("://");
+  size_t end = start == std::string::npos ? std::string::npos
+                                          : url.find('/', start + 3);
+  if (end == std::string::npos || url.size() <= 80)
+    return url;
+  return url.substr(0, end + 1) + "...";
+}
+
 }
 
 // ----------------------------------------------------------------------
@@ -460,10 +472,11 @@ bool FileDrop::active()
   return usable;
 }
 
-void FileDrop::drop(int x, int y, const std::vector<std::string>& paths)
+void FileDrop::drop(int x, int y, const std::vector<std::string>& paths,
+                    const std::vector<std::string>& links)
 {
   std::lock_guard<std::mutex> guard(lock);
-  if (!usable || paths.empty())
+  if (!usable || (paths.empty() && links.empty()))
     return;
 
   // Finished jobs can go
@@ -481,17 +494,21 @@ void FileDrop::drop(int x, int y, const std::vector<std::string>& paths)
   std::shared_ptr<std::atomic<bool>> done = job.done;
   FileDropURL b = base;
   std::string t = token;
-  job.thread = std::thread([this, x, y, paths, b, t, done]() {
-    dropJob(x, y, paths, b, t);
+  job.thread = std::thread([this, x, y, paths, links, b, t, done]() {
+    dropJob(x, y, paths, links, b, t);
     *done = true;
   });
   jobs.push_back(std::move(job));
 }
 
-std::vector<std::string> FileDrop::parseDrop(const char* text, int len)
+bool FileDrop::parseDrop(const char* text, int len,
+                         std::vector<std::string>* paths,
+                         std::vector<std::string>* links)
 {
-  std::vector<std::string> paths;
   std::string all(text, len);
+
+  paths->clear();
+  links->clear();
   size_t pos = 0;
 
   while (pos < all.size()) {
@@ -503,14 +520,20 @@ std::vector<std::string> FileDrop::parseDrop(const char* text, int len)
 
     while (!line.empty() && (line.back() == '\r' || line.back() == '\0'))
       line.pop_back();
-    if (line.empty())
+    // text/uri-list comments (some browsers name the link this way)
+    if (line.empty() || line[0] == '#')
       continue;
+
+    if (isHttpURL(line)) {
+      links->push_back(line);
+      continue;
+    }
 
     if (line.compare(0, 7, "file://") == 0) {
       // file:///path or file://host/path; percent-decoded
       size_t start = line.find('/', 7);
       if (start == std::string::npos)
-        return std::vector<std::string>();
+        return false;
       std::string path;
       for (size_t i = start; i < line.size(); i++) {
         if (line[i] == '%' && i + 2 < line.size() &&
@@ -531,10 +554,10 @@ std::vector<std::string> FileDrop::parseDrop(const char* text, int len)
     }
 
     if (!statFile(line, nullptr))
-      return std::vector<std::string>();
-    paths.push_back(line);
+      return false;
+    paths->push_back(line);
   }
-  return paths;
+  return !paths->empty() || !links->empty();
 }
 
 FileDropHttp* FileDrop::newHttp()
@@ -572,6 +595,7 @@ bool FileDrop::sleepFor(int seconds, uint64_t gen)
 }
 
 void FileDrop::dropJob(int x, int y, std::vector<std::string> paths,
+                       std::vector<std::string> links,
                        FileDropURL endpoint, std::string endpointToken)
 {
   std::vector<File> files;
@@ -598,7 +622,19 @@ void FileDrop::dropJob(int x, int y, std::vector<std::string> paths,
              ", \"sha256\": " + jsonString(files[i].sha256) +
              ", \"type\": " + jsonString(files[i].type) + "}";
   }
-  offer += "]}";
+  offer += "]";
+  // links only when there are some: a receiver that knows no links sees
+  // an offer of files as before
+  if (!links.empty()) {
+    offer += ", \"links\": [";
+    for (size_t i = 0; i < links.size(); i++) {
+      if (i)
+        offer += ", ";
+      offer += "{\"url\": " + jsonString(links[i]) + "}";
+    }
+    offer += "]";
+  }
+  offer += "}";
 
   JValue answer;
   FileDropHttp* http = newHttp();
@@ -624,10 +660,37 @@ void FileDrop::dropJob(int x, int y, std::vector<std::string> paths,
   releaseHttp(http);
 
   const JValue& results = answer["files"];
-  if (results.type != JValue::Array ||
-      results.array.size() != files.size()) {
+  if ((results.type != JValue::Array && !files.empty()) ||
+      (results.type == JValue::Array &&
+       results.array.size() != files.size())) {
     message(_("Invalid answer from the desktop"), true);
     return;
+  }
+
+  // Links: the receiver takes them itself, nothing to upload. One that
+  // does not know links leaves them out of the answer.
+  const JValue& linkResults = answer["links"];
+  for (size_t i = 0; i < links.size(); i++) {
+    std::string what = shortURL(links[i]);
+    if (linkResults.type != JValue::Array ||
+        i >= linkResults.array.size()) {
+      message(core::format(_("\"%s\": %s"), what.c_str(),
+                           _("links are not accepted here")), true);
+      continue;
+    }
+    const JValue& r = linkResults.array[i];
+    if (r["result"].string == "accept") {
+      std::string text = r["message"].string;
+      if (text.empty())
+        text = core::format(_("\"%s\" taken"), what.c_str());
+      message(text, false);
+      continue;
+    }
+    std::string reason = r["reason"].string;
+    if (reason.empty())
+      reason = _("not accepted here");
+    message(core::format(_("\"%s\": %s"), what.c_str(), reason.c_str()),
+            true);
   }
 
   for (size_t i = 0; i < files.size(); i++) {
@@ -906,18 +969,6 @@ void FileDrop::handleQueue(void* data)
     endpoint = self->base.str() + " " + self->token;
   }
   openDocument(open.text, open.name, endpoint);
-}
-
-// The server part of an URL, enough to tell where it points (share
-// links are long and say nothing more to a person)
-static std::string shortURL(const std::string& url)
-{
-  size_t start = url.find("://");
-  size_t end = start == std::string::npos ? std::string::npos
-                                          : url.find('/', start + 3);
-  if (end == std::string::npos || url.size() <= 80)
-    return url;
-  return url.substr(0, end + 1) + "...";
 }
 
 void FileDrop::openDocument(const std::string& url, const std::string& name,
