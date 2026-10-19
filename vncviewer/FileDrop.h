@@ -16,11 +16,11 @@
  * USA.
  */
 
-// Files dropped onto the viewer go to the desktop's file drop endpoint,
-// which the server announces with the DesktopEndpoint pseudo-encoding
-// (doc/file-drop.md). The network work runs in worker threads; messages
-// for the user and requests to open documents come back to the FLTK main
-// thread.
+// Files and links dropped onto the viewer go to the desktop's file drop
+// endpoint, which the server announces with the DesktopEndpoint
+// pseudo-encoding (doc/file-drop.md). The network work runs in worker
+// threads; messages for the user and requests to open documents come back
+// to the FLTK main thread.
 
 #ifndef __FILEDROP_H__
 #define __FILEDROP_H__
@@ -55,12 +55,16 @@ public:
   // Main thread: whether drops are accepted right now
   bool active();
 
-  // Main thread: files dropped at a framebuffer position
-  void drop(int x, int y, const std::vector<std::string>& paths);
+  // Main thread: files and links dropped at a framebuffer position
+  void drop(int x, int y, const std::vector<std::string>& paths,
+            const std::vector<std::string>& links);
 
-  // The paths of a drop (one per line, plain paths or file:// URIs);
-  // empty unless all of them are regular files
-  static std::vector<std::string> parseDrop(const char* text, int len);
+  // The parts of a drop, one per line: regular files (plain paths or
+  // file:// URIs) and http(s) links (from a browser). False if anything
+  // else is in it.
+  static bool parseDrop(const char* text, int len,
+                        std::vector<std::string>* paths,
+                        std::vector<std::string>* links);
 
 private:
   struct File {
@@ -74,6 +78,7 @@ private:
   void stopEvents();
   void eventsLoop(uint64_t generation, FileDropURL base, std::string token);
   void dropJob(int x, int y, std::vector<std::string> paths,
+               std::vector<std::string> links,
                FileDropURL base, std::string token);
   bool upload(const File& file, const FileDropURL& url,
               const std::string& token, std::string* error);
