@@ -83,6 +83,11 @@ public:
   // Aborts a running request from another thread
   void abort();
 
+  // Whether a TCP connection to the URL's host and port comes about
+  // within the given seconds (a firewall that drops packets would make
+  // a request wait for minutes)
+  static bool reachable(const FileDropURL& url, int seconds);
+
 private:
   void connect(const FileDropURL& url);
   void disconnect();

@@ -74,6 +74,9 @@ static int seekFile(FILE* f, int64_t offset)
 
 static const size_t chunkSize = 4 * 1024 * 1024;
 static const int maxAttempts = 5;
+// how long the direct way to an upload URL elsewhere may take to answer
+// before the fallback through the endpoint is used
+static const int fallbackProbeSeconds = 5;
 
 
 // ----------------------------------------------------------------------
@@ -712,9 +715,17 @@ void FileDrop::dropJob(int x, int y, std::vector<std::string> paths,
     std::string error;
     try {
       FileDropURL url = endpoint.resolve(r["upload"]["url"].string);
+      // a way through the endpoint, which we reach, for an upload URL
+      // elsewhere that we might not
+      bool hasFallback = !r["upload"]["fallback"]["url"].string.empty();
+      FileDropURL fallback;
+      if (hasFallback)
+        fallback = endpoint.resolve(r["upload"]["fallback"]["url"].string);
       message(core::format(_("Uploading \"%s\"..."),
                            files[i].name.c_str()), false);
-      if (upload(files[i], url, r["upload"]["token"].string, &error))
+      if (upload(files[i], url, r["upload"]["token"].string,
+                 hasFallback ? &fallback : nullptr,
+                 r["upload"]["fallback"]["token"].string, &error))
         message(core::format(_("\"%s\" uploaded"), files[i].name.c_str()),
                 false);
       else if (!stopping)
@@ -728,14 +739,39 @@ void FileDrop::dropJob(int x, int y, std::vector<std::string> paths,
 }
 
 // tus 1.0.0 core protocol: HEAD for the offset, PATCH from there
-bool FileDrop::upload(const File& file, const FileDropURL& url,
-                      const std::string& uploadToken, std::string* error)
+bool FileDrop::upload(const File& file, const FileDropURL& directUrl,
+                      const std::string& uploadToken,
+                      const FileDropURL* fallback,
+                      const std::string& fallbackToken, std::string* error)
 {
+  FileDropURL url = directUrl;
   std::map<std::string, std::string> headers;
-  headers["Tus-Resumable"] = "1.0.0";
+  bool relayed = false;
+
   // an URL on a media server may carry its own authorisation
-  if (!uploadToken.empty())
-    headers["Authorization"] = "Bearer " + uploadToken;
+  auto useToken = [&headers](const std::string& token) {
+    headers.clear();
+    headers["Tus-Resumable"] = "1.0.0";
+    if (!token.empty())
+      headers["Authorization"] = "Bearer " + token;
+  };
+  // the way through the endpoint, for good (the same upload: the offset
+  // stays)
+  auto useFallback = [&]() -> bool {
+    if (!fallback || relayed)
+      return false;
+    vlog.info(_("Upload of \"%s\": %s cannot be reached, going through "
+                "the desktop"), file.name.c_str(), directUrl.host.c_str());
+    url = *fallback;
+    useToken(fallbackToken);
+    relayed = true;
+    return true;
+  };
+
+  useToken(uploadToken);
+  // a firewall that drops packets would hold every attempt for minutes
+  if (fallback && !FileDropHttp::reachable(directUrl, fallbackProbeSeconds))
+    useFallback();
 
   FILE* f = openFile(file.path);
   if (!f) {
@@ -818,8 +854,13 @@ bool FileDrop::upload(const File& file, const FileDropURL& url,
         releaseHttp(http);
       if (stopping)
         break;
-      // Ask for the offset again and continue there
+      // Ask for the offset again and continue there, through the
+      // desktop if the direct way broke
       offset = -1;
+      if (useFallback()) {
+        failures = 0;
+        continue;
+      }
       if (++failures >= maxAttempts) {
         *error = e.what();
         break;
