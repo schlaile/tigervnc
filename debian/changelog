@@ -1,3 +1,13 @@
+tigervnc-wws (1.16.80+wws2-1) unstable; urgency=medium
+
+  * File drop: links dropped from a browser are offered next to files
+    (wws-filedrop-6).
+  * File drop: an upload to a media server that cannot be reached goes on
+    through the CDN or through the desktop (upload.fallbacks, a short
+    connection probe first; wws-filedrop-7).
+
+ -- Peter Schlaile <peter@schlaile.de>  Tue, 20 Oct 2026 18:47:40 +0200
+
 tigervnc-wws (1.16.80+wws1-1) unstable; urgency=medium
 
   * Built from the wws branch, which joins file drop, device links and
