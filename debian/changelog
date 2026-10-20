@@ -1,3 +1,11 @@
+tigervnc (1.7.0+dfsg-7+deb9u2+wws4) stretch; urgency=medium
+
+  * Take over 1.7.0+dfsg-7+deb9u2 (stretch-security, CVE-2020-26117: TLS
+    certificates of exceptions no longer accepted as authorities), so
+    that the fork stays newer than Debian's package.
+
+ -- Peter Schlaile <peter@schlaile.de>  Tue, 20 Oct 2026 23:53:12 +0200
+
 tigervnc (1.7.0+dfsg-7+deb9u1+wws3) stretch; urgency=medium
 
   * Xvnc parameters DeviceLink, DeviceLinkDir and DeviceLinkChannels: let
