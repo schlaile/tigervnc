@@ -3,9 +3,9 @@ Section: x11
 Priority: optional
 Maintainer: Peter Schlaile <peter@schlaile.de>
 Build-Depends:
- debhelper-compat (= 13),
- cmake,
- pkgconf,
+ debhelper (>= 10),
+ cmake (>= 3.7),
+ pkg-config,
  gettext,
  zlib1g-dev,
  libpixman-1-dev,
