@@ -28,6 +28,7 @@ Build-Depends:
  libxcvt-dev,
  libwrap0-dev,
  libfltk1.3-dev (>= 1.3.3),
+ fluid,
 # For H.264 RFB encoding support
  libavcodec-dev,
  libavutil-dev,
