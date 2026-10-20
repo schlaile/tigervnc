@@ -264,24 +264,26 @@ files directly to a media server. If it is relative, it is resolved against
 the endpoint URL (after `SameHost`).
 
 A media server elsewhere may not be reachable from the client (a firewall,
-a VPN the client is not in). The receiver can then offer a way through
-itself, which the client reaches as it reaches the endpoint:
+a VPN the client is not in). The receiver can then name other ways to the
+same upload, in the order to try:
 
 ```json
 {"result": "accept",
  "upload": {"url": "https://media.example/files/7f3a…", "token": "",
-            "fallback": {"url": "/relay/9c2e…", "token": "51ab…"}}}
+            "fallbacks": [
+              {"url": "https://cdn.example/u/eyJp…", "token": ""},
+              {"url": "/relay/9c2e…", "token": "51ab…"}]}}
 ```
 
-`upload.fallback` is optional. The fallback is the same upload: the
-receiver passes the client's `HEAD` and `PATCH` requests on to
-`upload.url`, so the offset is the same on both ways. A client that knows
-it checks first whether a connection to the host of `upload.url` comes
-about within a few seconds (a firewall that drops packets would otherwise
-hold every attempt for minutes); if not, or if the direct way fails during
-the upload, it continues through `fallback.url` with `fallback.token`. It
-does not go back. A receiver must relay only URLs it gave out itself, so
-that it does not become a way into networks for anybody else.
+`upload.fallbacks` is optional. Each entry leads to the same upload (a
+public relay of the media server, or the receiver itself passing the
+requests on), so the offset is the same on every way. A client that knows
+it takes the first way, in the order url, fallbacks, whose host accepts a
+connection within a few seconds (a firewall that drops packets would
+otherwise hold every attempt for minutes); the last way is taken without
+a probe. If a way fails during the upload, the client goes on with the
+next one, never back. A receiver must relay only URLs it gave out itself,
+so that it does not become a way into networks for anybody else.
 
 ### Requests from the desktop: `GET events`
 
