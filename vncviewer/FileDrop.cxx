@@ -749,11 +749,11 @@ bool FileDrop::upload(const File& file, const FileDropURL& directUrl,
   bool relayed = false;
 
   // an URL on a media server may carry its own authorisation
-  auto useToken = [&headers](const std::string& token) {
+  auto useToken = [&headers](const std::string& value) {
     headers.clear();
     headers["Tus-Resumable"] = "1.0.0";
-    if (!token.empty())
-      headers["Authorization"] = "Bearer " + token;
+    if (!value.empty())
+      headers["Authorization"] = "Bearer " + value;
   };
   // the way through the endpoint, for good (the same upload: the offset
   // stays)
