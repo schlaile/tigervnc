@@ -1,0 +1,14 @@
+Index: pkg-tigervnc/unix/vncserver
+===================================================================
+--- pkg-tigervnc.orig/unix/vncserver
++++ pkg-tigervnc/unix/vncserver
+@@ -164,7 +164,8 @@ if ((@ARGV > 0) && ($ARGV[0] =~ /^:(\d+)
+     $displayNumber = $1;
+     shift(@ARGV);
+     if (!&CheckDisplayNumber($displayNumber)) {
+-	die "A VNC server is already running as :$displayNumber\n";
++        warn "A VNC server is already running as :$displayNumber\n";
++        $displayNumber = &GetDisplayNumber();
+     }
+ } elsif ((@ARGV > 0) && ($ARGV[0] !~ /^-/) && ($ARGV[0] !~ /^\+/)) {
+     &Usage();

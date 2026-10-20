@@ -1,22 +1,263 @@
 #!/usr/bin/make -f
+# See debhelper(7) (uncomment to enable)
+# output every command that modifies files on the build system.
+#export DH_VERBOSE = 1
+
+
+# see FEATURE AREAS in dpkg-buildflags(1)
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
-%:
-	dh $@ --buildsystem=cmake
+# see ENVIRONMENT in dpkg-buildflags(1)
+# package maintainers to append CFLAGS
+#export DEB_CFLAGS_MAINT_APPEND  = -Wall -pedantic
+# package maintainers to append LDFLAGS
+export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
 
-# Only the viewer: the X server would need the complete Xorg source.
+# Normal situation
+#VNC_PATCH = $(CURDIR)/unix/xserver120.patch
+VNC_PATCH = $(CURDIR)/unix/xserver21.patch
+# However in this case we do not have this file from upstream so we use a
+# debian specific copy instead.
+#VNC_PATCH = $(CURDIR)/debian/xserver121.patch
+VNC_LIBTOOL_PATCH = $(CURDIR)/contrib/packages/deb/ubuntu-jammy/debian/xorg-source-patches/debian_libtool.patch
+
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/buildflags.mk
+include /usr/share/dpkg/pkg-info.mk
+
+# Determine package date from pkg-info.
+BUILD_TIMESTAMP:=$(shell date --date='@$(DEB_TIMESTAMP)')
+export BUILD_TIMESTAMP
+
+# Strip a possible epoch marker from source version.
+NO_EPOCH_VER:=$(shell echo $(DEB_VERSION) | sed 's/^.://')
+
+# Determine upstream version number for make get-orig-source
+UPSTREAM_DFSG_VERSION:=$(shell echo $(NO_EPOCH_VER) | sed 's/-.*//')
+
+# Determine upstream version number.
+UPSTREAM_VERSION:=$(shell echo $(UPSTREAM_DFSG_VERSION) | cut -d"+" -f1)
+
+DEB_DESTDIR := $(CURDIR)/debian/tmp
+
+TIGERVNC_SRCDIR		:= $(CURDIR)
+TIGERVNC_BUILDDIR	:= $(CURDIR)/obj-$(DEB_HOST_MULTIARCH)
+
+XTIGERVNC_SRCDIR	:= $(CURDIR)/unix/xserver
+XTIGERVNC_BUILDDIR	:= $(CURDIR)/obj-$(DEB_HOST_MULTIARCH)/unix/xserver
+
+# Work around bug #641051 (See https://bugs.debian.org/641051)
+DEB_CMAKE_EXTRA_FLAGS	:= -DCMAKE_LIBRARY_PATH=$(DEB_HOST_MULTIARCH)
+
+#DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_LIBWRAP:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_NLS:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_NETTLE:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_GNUTLS:BOOL=ON
+DEB_CMAKE_EXTRA_FLAGS	+= -DENABLE_H264:BOOL=ON
+#DEB_CMAKE_EXTRA_FLAGS	+= -DBUILD_JAVA=1
+DEB_CMAKE_EXTRA_FLAGS   += -DBUILD_TIMESTAMP="$(BUILD_TIMESTAMP)"
+
+# Unfortunately quoting in /usr/share/xserver-xorg/configure_flags.mk is fucked
+# up in buster and ${xxx} is not escaped correctly.
+xserver_confflags := $(shell cat /usr/share/xserver-xorg/configure_flags.mk | \
+  sed -ne '/^xserver_confflags\s*=/{s/^[^=]*=//;s/--with-builderstring="[^"]*"//;p}')
+
+#-include /usr/share/xserver-xorg/configure_flags.mk
+#xserver_confflags := $(shell echo '$(xserver_confflags)' | sed 's/--with-builderstring="[^"]*"//')
+
+XORG_DEBIAN_CONFIGURE_FLAGS := \
+	$(filter-out \
+		--prefix=% \
+		--mandir=% \
+		--infodir=% \
+		--sysconfdir=% \
+		--localstatedir=% \
+		--build=% \
+		--host=% \
+		--enable-xwayland \
+		--enable-dmx \
+		--enable-xvfb \
+		--enable-xnest \
+		--enable-xephyr \
+		--enable-xorg \
+		--enable-dri \
+		--enable-xmir \
+	    , $(xserver_confflags) \
+	)
+
+DEB_CONFIGURE_EXTRA_FLAGS := \
+	--disable-selective-werror \
+	--with-builderstring="tigervnc-xorg-server $(NO_EPOCH_VER) (TigerVNC Packaging Team <pkg-tigervnc-devel@lists.alioth.debian.org>)" \
+	--disable-xwayland \
+	--disable-dmx \
+	--disable-xvfb \
+	--disable-xnest \
+	--disable-xephyr \
+	--disable-xorg \
+	--disable-dri
+
+# Don't use libunwind for armel, armhf, and arm64 as this library is buggy
+# (bug #923962) on those architectures.
+ifneq (,$(filter $(DEB_HOST_ARCH), armel armhf arm64))
+	DEB_CONFIGURE_EXTRA_FLAGS += --disable-libunwind
+	XORG_DEBIAN_CONFIGURE_FLAGS := \
+	    $(filter-out --enable-libunwind, $(XORG_DEBIAN_CONFIGURE_FLAGS))
+endif
+DEB_CONFIGURE_EXTRA_FLAGS += \
+	CPPFLAGS='$(CPPFLAGS) -DBUILD_TIMESTAMP="\"$${BUILD_TIMESTAMP}\""'
+
+.PHONY: debug-debian-rules
+debug-debian-rules:
+	@echo '$$(DEB_SOURCE) $(DEB_SOURCE)'
+	@echo '$$(BUILD_TIMESTAMP) $(BUILD_TIMESTAMP)'
+	@echo '$$(DEB_VERSION) $(DEB_VERSION)'
+	@echo '$$(NO_EPOCH_VER) $(NO_EPOCH_VER)'
+	@echo '$$(UPSTREAM_DFSG_VERSION) $(UPSTREAM_DFSG_VERSION)'
+	@echo '$$(UPSTREAM_VERSION) $(UPSTREAM_VERSION)'
+	@echo '$$(TIGERVNC_SRCDIR) $(TIGERVNC_SRCDIR)'
+	@echo '$$(TIGERVNC_BUILDDIR) $(TIGERVNC_BUILDDIR)'
+	@echo '$$(XTIGERVNC_SRCDIR) $(XTIGERVNC_SRCDIR)'
+	@echo '$$(XTIGERVNC_BUILDDIR) $(XTIGERVNC_BUILDDIR)'
+	@echo '$$(DEB_HOST_ARCH) $(DEB_HOST_ARCH)'
+	@echo '$$(DEB_HOST_MULTIARCH) $(DEB_HOST_MULTIARCH)'
+	@echo '$$(XORG_DEBIAN_CONFIGURE_FLAGS) $(XORG_DEBIAN_CONFIGURE_FLAGS)'
+	@echo '$$(DEB_CMAKE_EXTRA_FLAGS) $(DEB_CMAKE_EXTRA_FLAGS)'
+	@echo '$$(DEB_CONFIGURE_EXTRA_FLAGS) $(DEB_CONFIGURE_EXTRA_FLAGS)'
+	@echo '$$(DEB_DESTDIR) $(DEB_DESTDIR)'
+
+.PHONY: override_dh_autoreconf
+override_dh_autoreconf:
+	dh_autoreconf
+	cd $(XTIGERVNC_SRCDIR) && { \
+	    patch --no-backup-if-mismatch -p1 < $(VNC_LIBTOOL_PATCH); \
+	  }
+
+.PHONY: override_dh_auto_configure
 override_dh_auto_configure:
-	dh_auto_configure -- \
-		-DBUILD_VIEWER=ON \
-		-DENABLE_PAM=OFF \
-		-DENABLE_AUDIO=OFF \
-		-DENABLE_H264=OFF \
-		-DENABLE_SYSTEMD=OFF \
-		-DINSTALL_SYSTEMD_UNITS=OFF \
-		-DENABLE_NLS=OFF
+	dh_auto_configure -D$(TIGERVNC_SRCDIR) -B$(TIGERVNC_BUILDDIR) -- \
+		$(DEB_CMAKE_EXTRA_FLAGS)
+	dh_auto_configure -D$(XTIGERVNC_SRCDIR) -B$(XTIGERVNC_BUILDDIR) -- \
+		$(XORG_DEBIAN_CONFIGURE_FLAGS) \
+		$(DEB_CONFIGURE_EXTRA_FLAGS)
 
+.PHONY: override_dh_auto_build
+override_dh_auto_build:
+	dh_auto_build -D$(TIGERVNC_SRCDIR) -B$(TIGERVNC_BUILDDIR)
+	dh_auto_build -D$(XTIGERVNC_SRCDIR) -B$(XTIGERVNC_BUILDDIR)
+
+.PHONY: override_dh_auto_install
 override_dh_auto_install:
-	install -D -m 0755 obj-$(DEB_HOST_GNU_TYPE)/vncviewer/vncviewer \
-		debian/tigervnc-wws-viewer/usr/bin/tigervnc-wws-viewer
+	dh_auto_install -D$(TIGERVNC_SRCDIR) -B$(TIGERVNC_BUILDDIR)
+	dh_auto_install -D$(XTIGERVNC_SRCDIR) -B$(XTIGERVNC_BUILDDIR)
+	mv $(DEB_DESTDIR)/usr/share/doc/tigervnc \
+	  $(DEB_DESTDIR)/usr/share/doc/tigervnc-common
+	mv $(DEB_DESTDIR)/usr/bin/vncviewer \
+	  $(DEB_DESTDIR)/usr/bin/xvncviewer
+	mv $(DEB_DESTDIR)/usr/share/man/man1/vncviewer.1 \
+	  $(DEB_DESTDIR)/usr/share/man/man1/xvncviewer.1
+	mv $(DEB_DESTDIR)/usr/bin/x0vncserver \
+	  $(DEB_DESTDIR)/usr/bin/X0vnc
+	mv $(DEB_DESTDIR)/usr/share/man/man1/x0vncserver.1 \
+	  $(DEB_DESTDIR)/usr/share/man/man1/X0vnc.1
+	mv $(DEB_DESTDIR)/usr/share/applications/vncviewer.desktop \
+	  $(DEB_DESTDIR)/usr/share/applications/xvncviewer.desktop
+	mkdir -p $(DEB_DESTDIR)/usr/share/icons/hicolor/scalable/apps
+	cp media/icons/tigervnc.svg \
+	  $(DEB_DESTDIR)/usr/share/icons/hicolor/scalable/apps/
+	for i in 16 22 24 32 48; do \
+	  mkdir -p $(DEB_DESTDIR)/usr/share/icons/hicolor/$${i}x$${i}/apps; \
+	  cp media/icons/tigervnc_$${i}.png \
+	    $(DEB_DESTDIR)/usr/share/icons/hicolor/$${i}x$${i}/apps/tigervnc.png; \
+	done
+	# Hack, replace media/icons/tigervnc_16.png of wrong dimensions 20x20 by our fixed version.
+	cp debian/tigervnc_16.png \
+	  $(DEB_DESTDIR)/usr/share/icons/hicolor/16x16/apps/tigervnc.png
+	cd $(DEB_DESTDIR) && \
+	  find usr/bin usr/sbin usr/lib/systemd/system usr/libexec usr/share/man usr/share/applications -name "*vnc*" | \
+	  while read line; do \
+	    echo Rename "$$line" `echo "$$line" | sed -e 's/vnc/tigervnc/g'` ; \
+	    mv "$$line" `echo "$$line" | sed -e 's/vnc/tigervnc/g'`; \
+	  done
+	# Fixup org.tigervnc.vncviewer.metainfo.xml
+	sed -i \
+	  -e 's/<release version="\([0-9.]\+\)"/<release version="\1+dfsg"/' \
+	  -e 's/<launchable type="desktop-id">vncviewer.desktop<\/launchable>/<launchable type="desktop-id">xtigervncviewer.desktop<\/launchable>/' \
+	  $(DEB_DESTDIR)/usr/share/metainfo/org.tigervnc.vncviewer.metainfo.xml
+	cp -pr debian/helpers/* \
+	  debian/tmp
+	find debian/tmp/usr/share/man -type f | while read line; do \
+	  echo "Rewriting and renaming $$line into $$line.gz" ; \
+	  sed -e 's/\(\<\|\\f[IBP]\)vncviewer\>/\1xtigervncviewer/g' \
+	      -e 's/\(\<\|\\f[IBP]\)vncpasswd\>/\1tigervncpasswd/g' \
+	      -e 's/\(\<\|\\f[IBP]\)vncconfig\>/\1tigervncconfig/g' \
+	      -e 's/\(\<\|\\f[IBP]\)vncserver\>/\1tigervncserver/g' \
+	      -e 's/\(\<\|\\f[IBP]\)vncsession\>/\1tigervncsession/g' \
+	      -e 's/\(\<\|\\f[IBP]\)X0VNCSERVER\>/\1X0tigervnc/g' \
+	      -e 's/\(\<\|\\f[IBP]\)x0vncserver\>/\1X0tigervnc/g' \
+	      -e 's/\(\<\|\\f[IBP]\)Xvnc\>/\1Xtigervnc/g' \
+	      -e 's/\(\<\|\\f[IBP]\)tigervnc\/tigervnc/\1tigervnc\/vnc/g' \
+	      $$line | \
+	    gzip -9 > $$line.gz; \
+	  rm -f $$line; \
+	done
+	touch $@
 
-override_dh_auto_test:
+.PHONY: override_dh_auto_clean
+override_dh_auto_clean:
+	dh_auto_clean -D$(TIGERVNC_SRCDIR) -B$(TIGERVNC_BUILDDIR)
+	dh_auto_clean -D$(XTIGERVNC_SRCDIR) -B$(XTIGERVNC_BUILDDIR)
+
+build build-arch build-indep: patch
+clean: unpatch
+
+%:
+	dh $@
+
+.PHONY: patch
+patch: apply-vnc-patch-xorg
+apply-vnc-patch-xorg: apply-unify-xorg-and-vnc-tree
+
+.PHONY: unpatch
+unpatch: reverse-unify-xorg-and-vnc-tree
+reverse-unify-xorg-and-vnc-tree: reverse-vnc-patch-xorg
+
+.PHONY: apply-vnc-patch-xorg reverse-vnc-patch-xorg
+
+apply-vnc-patch-xorg: unix/xserver/.apply-vnc-patch-xorg.stamp
+
+unix/xserver/.apply-vnc-patch-xorg.stamp: $(VNC_PATCH)
+	cd $(XTIGERVNC_SRCDIR) && { \
+		patch --no-backup-if-mismatch -p1 < $(VNC_PATCH) && \
+		touch .apply-vnc-patch-xorg.stamp; \
+	}
+
+reverse-vnc-patch-xorg: $(VNC_PATCH)
+	cd $(XTIGERVNC_SRCDIR) && if test -f .apply-vnc-patch-xorg.stamp; then \
+		patch --no-backup-if-mismatch -R -p1 < $(VNC_PATCH); \
+		rm -f .apply-vnc-patch-xorg.stamp; \
+	fi
+
+.PHONY: apply-unify-xorg-and-vnc-tree reverse-unify-xorg-and-vnc-tree
+
+apply-unify-xorg-and-vnc-tree: unix/xserver/.apply-unify-xorg-and-vnc-tree.stamp
+
+unix/xserver/.apply-unify-xorg-and-vnc-tree.stamp:
+	cd $(XTIGERVNC_SRCDIR) && \
+	  { tar --strip-components 1 -xvJf /usr/src/xorg-server.tar.xz | \
+	      sed -e 's@^[^/]*/@@' > .apply-unify-xorg-and-vnc-tree.files; } && \
+	  touch .apply-unify-xorg-and-vnc-tree.stamp
+
+reverse-unify-xorg-and-vnc-tree: override_dh_auto_clean
+	cd $(XTIGERVNC_SRCDIR) && \
+		if test -f .apply-unify-xorg-and-vnc-tree.files; then \
+			sort -r < .apply-unify-xorg-and-vnc-tree.files | \
+				while read line; do \
+					if test -d "$$line"; then \
+						rmdir --ignore-fail-on-non-empty "$$line"; \
+					else \
+						rm -f "$$line"; \
+					fi; \
+				done; \
+			rm -f .apply-unify-xorg-and-vnc-tree.stamp \
+			      .apply-unify-xorg-and-vnc-tree.files; \
+		fi

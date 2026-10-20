@@ -1,0 +1,34 @@
+Description: Enable reproducible builds by deriving the build time from the Debian changelog.
+Author: Joachim Falk <joachim.falk@gmx.de>
+Forwarded: not-needed
+
+Index: pkg-tigervnc/unix/x0vncserver/buildtime.c
+===================================================================
+--- pkg-tigervnc.orig/unix/x0vncserver/buildtime.c
++++ pkg-tigervnc/unix/x0vncserver/buildtime.c
+@@ -15,4 +15,4 @@
+  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
+  * USA.
+  */
+-char buildtime[] = __DATE__ " " __TIME__;
++char buildtime[] = BUILD_TIMESTAMP;
+Index: pkg-tigervnc/unix/xserver/hw/vnc/buildtime.c
+===================================================================
+--- pkg-tigervnc.orig/unix/xserver/hw/vnc/buildtime.c
++++ pkg-tigervnc/unix/xserver/hw/vnc/buildtime.c
+@@ -15,4 +15,4 @@
+  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
+  * USA.
+  */
+-char buildtime[] = __DATE__ " " __TIME__;
++char buildtime[] = BUILD_TIMESTAMP;
+Index: pkg-tigervnc/unix/vncconfig/buildtime.c
+===================================================================
+--- pkg-tigervnc.orig/unix/vncconfig/buildtime.c
++++ pkg-tigervnc/unix/vncconfig/buildtime.c
+@@ -15,4 +15,4 @@
+  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307,
+  * USA.
+  */
+-char buildtime[] = __DATE__ " " __TIME__;
++char buildtime[] = BUILD_TIMESTAMP;

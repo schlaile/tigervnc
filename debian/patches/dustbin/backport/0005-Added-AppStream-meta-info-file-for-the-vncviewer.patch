@@ -1,0 +1,191 @@
+From 704eff041c3e5dd0fb712fa76774b8d3f6dd31f9 Mon Sep 17 00:00:00 2001
+From: Joachim Falk <joachim.falk@gmx.de>
+Date: Sun, 20 Feb 2022 00:06:38 +0100
+Subject: [PATCH] Added AppStream meta info file for the vncviewer
+
+---
+ .../packages/deb/ubuntu-bionic/debian/control |  2 +-
+ .../packages/deb/ubuntu-focal/debian/control  |  2 +-
+ contrib/packages/rpm/el7/SPECS/tigervnc.spec  |  8 +++-
+ contrib/packages/rpm/el8/SPECS/tigervnc.spec  |  4 +-
+ po/CMakeLists.txt                             |  1 +
+ vncviewer/CMakeLists.txt                      | 28 ++++++++++++
+ .../org.tigervnc.vncviewer.metainfo.xml.in    | 45 +++++++++++++++++++
+ 8 files changed, 87 insertions(+), 5 deletions(-)
+ create mode 100644 vncviewer/org.tigervnc.vncviewer.metainfo.xml.in
+
+Index: pkg-tigervnc/contrib/packages/deb/ubuntu-bionic/debian/control
+===================================================================
+--- pkg-tigervnc.orig/contrib/packages/deb/ubuntu-bionic/debian/control
++++ pkg-tigervnc/contrib/packages/deb/ubuntu-bionic/debian/control
+@@ -3,7 +3,7 @@ Section: x11
+ Priority: optional
+ Maintainer: Brian P. Hinz <bphinz@users.sourceforge.net>
+ Standards-Version: 3.8.4
+-Build-Depends: debhelper (>= 9),dh-autoreconf,po-debconf,dpkg-dev (>= 1.16.1),quilt,lsb-release,pkg-config,bison,flex,xauth,xutils-dev (>= 1:7.6+4),xfonts-utils (>= 1:7.5+1),x11proto-bigreqs-dev (>= 1:1.1.0),x11proto-composite-dev (>= 1:0.4),x11proto-core-dev (>= 7.0.31),x11proto-damage-dev (>= 1.1),x11proto-fixes-dev (>= 1:5.0),x11proto-fonts-dev (>= 2.1.3),x11proto-kb-dev (>= 1.0.3),x11proto-xinerama-dev,x11proto-randr-dev (>= 1.5.0),x11proto-record-dev (>= 1.13.99.1),x11proto-render-dev (>= 2:0.11),x11proto-resource-dev (>= 1.2.0),x11proto-scrnsaver-dev,x11proto-video-dev,x11proto-xcmisc-dev (>= 1.2.0),x11proto-xext-dev (>= 7.2.99.901),x11proto-xf86bigfont-dev (>= 1.2.0),x11proto-xf86dga-dev (>= 2.0.99.1),x11proto-xf86vidmode-dev (>= 2.2.99.1),x11proto-present-dev,x11proto-dri3-dev,xtrans-dev (>= 1.3.5),libxau-dev (>= 1:1.0.5-2),x11proto-input-dev (>= 2.3),x11proto-dri2-dev (>= 2.8),libxdmcp-dev (>= 1:0.99.1),libxfont-dev (>= 1:2.0.1),libxkbfile-dev (>= 1:0.99.1),libpixman-1-dev (>= 0.27.2),libpciaccess-dev (>= 0.12.901),libgcrypt-dev,nettle-dev,libudev-dev (>= 151-3) [linux-any],libselinux1-dev (>= 2.0.80) [linux-any],libaudit-dev [linux-any],x11proto-xf86dri-dev (>= 2.1.0),libdrm-dev (>= 2.4.46) [!hurd-i386],x11proto-gl-dev (>= 1.4.17),libgl1-mesa-dev (>= 9.2),libxmuu-dev (>= 1:0.99.1),libxext-dev (>= 1:0.99.1),libx11-dev (>= 2:1.6),libxrender-dev (>= 1:0.9.0),libxi-dev (>= 2:1.6.99.1),x11proto-dmx-dev (>= 1:2.2.99.1),libdmx-dev (>= 1:1.0.1),libxpm-dev (>= 1:3.5.3),libxaw7-dev (>= 1:0.99.1),libxt-dev (>= 1:0.99.1),libxmu-dev (>= 1:0.99.1),libxtst-dev (>= 1:0.99.1),libxres-dev (>= 1:0.99.1),libxfixes-dev (>= 1:3.0.0),libxv-dev,libxinerama-dev,libxshmfence-dev (>= 1.1) [!hurd-i386],libepoxy-dev [linux-any kfreebsd-any],libegl1-mesa-dev [linux-any kfreebsd-any],libgbm-dev (>= 10.2) [linux-any kfreebsd-any],libxcb1-dev,libxcb-xkb-dev,libxcb-shape0-dev,libxcb-render0-dev,libxcb-render-util0-dev,libxcb-util0-dev,libxcb-image0-dev,libxcb-icccm4-dev,libxcb-shm0-dev,libxcb-keysyms1-dev,libxcb-randr0-dev,libxcb-xv0-dev,libxcb-glx0-dev,libxcb-xf86dri0-dev (>= 1.6),xkb-data,x11-xkb-utils,libbsd-dev,libwayland-dev [linux-any],wayland-protocols (>= 1.9) [linux-any],libdbus-1-dev (>= 1.0) [linux-any],libsystemd-dev [linux-any],libmirclient-dev (>= 0.13.1) [!powerpc !ppc64el !s390x],mir-client-platform-mesa-dev,zlib1g-dev,libjpeg-turbo8-dev,perl-modules,cmake,gnutls-dev,libpam0g-dev,libpng-dev,automake,autoconf,libtool,pkg-config,openjdk-8-jdk,xorg-server-source,libfltk1.3-dev,fluid,curl,bzip2,quilt,libosmesa6-dev,libgl1-mesa-dri,libgl1-mesa-glx,libxft-dev,xfonts-base,libexpat1-dev,libfontconfig1-dev,libglu1-mesa-dev,libxcursor-dev,libxrandr-dev,libcairo2-dev
++Build-Depends: debhelper (>= 9),dh-autoreconf,po-debconf,dpkg-dev (>= 1.16.1),quilt,appstream,lsb-release,pkg-config,bison,flex,xauth,xutils-dev (>= 1:7.6+4),xfonts-utils (>= 1:7.5+1),x11proto-bigreqs-dev (>= 1:1.1.0),x11proto-composite-dev (>= 1:0.4),x11proto-core-dev (>= 7.0.31),x11proto-damage-dev (>= 1.1),x11proto-fixes-dev (>= 1:5.0),x11proto-fonts-dev (>= 2.1.3),x11proto-kb-dev (>= 1.0.3),x11proto-xinerama-dev,x11proto-randr-dev (>= 1.5.0),x11proto-record-dev (>= 1.13.99.1),x11proto-render-dev (>= 2:0.11),x11proto-resource-dev (>= 1.2.0),x11proto-scrnsaver-dev,x11proto-video-dev,x11proto-xcmisc-dev (>= 1.2.0),x11proto-xext-dev (>= 7.2.99.901),x11proto-xf86bigfont-dev (>= 1.2.0),x11proto-xf86dga-dev (>= 2.0.99.1),x11proto-xf86vidmode-dev (>= 2.2.99.1),x11proto-present-dev,x11proto-dri3-dev,xtrans-dev (>= 1.3.5),libxau-dev (>= 1:1.0.5-2),x11proto-input-dev (>= 2.3),x11proto-dri2-dev (>= 2.8),libxdmcp-dev (>= 1:0.99.1),libxfont-dev (>= 1:2.0.1),libxkbfile-dev (>= 1:0.99.1),libpixman-1-dev (>= 0.27.2),libpciaccess-dev (>= 0.12.901),libgcrypt-dev,nettle-dev,libudev-dev (>= 151-3) [linux-any],libselinux1-dev (>= 2.0.80) [linux-any],libaudit-dev [linux-any],x11proto-xf86dri-dev (>= 2.1.0),libdrm-dev (>= 2.4.46) [!hurd-i386],x11proto-gl-dev (>= 1.4.17),libgl1-mesa-dev (>= 9.2),libxmuu-dev (>= 1:0.99.1),libxext-dev (>= 1:0.99.1),libx11-dev (>= 2:1.6),libxrender-dev (>= 1:0.9.0),libxi-dev (>= 2:1.6.99.1),x11proto-dmx-dev (>= 1:2.2.99.1),libdmx-dev (>= 1:1.0.1),libxpm-dev (>= 1:3.5.3),libxaw7-dev (>= 1:0.99.1),libxt-dev (>= 1:0.99.1),libxmu-dev (>= 1:0.99.1),libxtst-dev (>= 1:0.99.1),libxres-dev (>= 1:0.99.1),libxfixes-dev (>= 1:3.0.0),libxv-dev,libxinerama-dev,libxshmfence-dev (>= 1.1) [!hurd-i386],libepoxy-dev [linux-any kfreebsd-any],libegl1-mesa-dev [linux-any kfreebsd-any],libgbm-dev (>= 10.2) [linux-any kfreebsd-any],libxcb1-dev,libxcb-xkb-dev,libxcb-shape0-dev,libxcb-render0-dev,libxcb-render-util0-dev,libxcb-util0-dev,libxcb-image0-dev,libxcb-icccm4-dev,libxcb-shm0-dev,libxcb-keysyms1-dev,libxcb-randr0-dev,libxcb-xv0-dev,libxcb-glx0-dev,libxcb-xf86dri0-dev (>= 1.6),xkb-data,x11-xkb-utils,libbsd-dev,libwayland-dev [linux-any],wayland-protocols (>= 1.9) [linux-any],libdbus-1-dev (>= 1.0) [linux-any],libsystemd-dev [linux-any],libmirclient-dev (>= 0.13.1) [!powerpc !ppc64el !s390x],mir-client-platform-mesa-dev,zlib1g-dev,libjpeg-turbo8-dev,perl-modules,cmake,gnutls-dev,libpam0g-dev,libpng-dev,automake,autoconf,libtool,pkg-config,openjdk-8-jdk,xorg-server-source,libfltk1.3-dev,fluid,curl,bzip2,quilt,libosmesa6-dev,libgl1-mesa-dri,libgl1-mesa-glx,libxft-dev,xfonts-base,libexpat1-dev,libfontconfig1-dev,libglu1-mesa-dev,libxcursor-dev,libxrandr-dev,libcairo2-dev
+ Homepage: http://www.tigervnc.com
+ 
+ Package: tigervncserver
+Index: pkg-tigervnc/contrib/packages/deb/ubuntu-focal/debian/control
+===================================================================
+--- pkg-tigervnc.orig/contrib/packages/deb/ubuntu-focal/debian/control
++++ pkg-tigervnc/contrib/packages/deb/ubuntu-focal/debian/control
+@@ -3,7 +3,7 @@ Section: x11
+ Priority: optional
+ Maintainer: Brian P. Hinz <bphinz@users.sourceforge.net>
+ Standards-Version: 3.8.4
+-Build-Depends: debhelper (>= 9),dh-autoreconf,po-debconf,dpkg-dev (>= 1.16.1),quilt,lsb-release,pkg-config,bison,flex,xauth,xutils-dev (>= 1:7.6+4),xfonts-utils (>= 1:7.5+1),x11proto-bigreqs-dev (>= 1:1.1.0),x11proto-composite-dev (>= 1:0.4),x11proto-core-dev (>= 7.0.31),x11proto-damage-dev (>= 1.1),x11proto-fixes-dev (>= 1:5.0),x11proto-fonts-dev (>= 2.1.3),x11proto-kb-dev (>= 1.0.3),x11proto-xinerama-dev,x11proto-randr-dev (>= 1.5.0),x11proto-record-dev (>= 1.13.99.1),x11proto-render-dev (>= 2:0.11),x11proto-resource-dev (>= 1.2.0),x11proto-scrnsaver-dev,x11proto-video-dev,x11proto-xcmisc-dev (>= 1.2.0),x11proto-xext-dev (>= 7.2.99.901),x11proto-xf86bigfont-dev (>= 1.2.0),x11proto-xf86dga-dev (>= 2.0.99.1),x11proto-xf86vidmode-dev (>= 2.2.99.1),x11proto-present-dev,x11proto-dri3-dev,xtrans-dev (>= 1.3.5),libxau-dev (>= 1:1.0.5-2),x11proto-input-dev (>= 2.3),x11proto-dri2-dev (>= 2.8),libxdmcp-dev (>= 1:0.99.1),libxfont-dev (>= 1:2.0.1),libxkbfile-dev (>= 1:0.99.1),libpixman-1-dev (>= 0.27.2),libpciaccess-dev (>= 0.12.901),libgcrypt-dev,nettle-dev,libudev-dev (>= 151-3) [linux-any],libselinux1-dev (>= 2.0.80) [linux-any],libaudit-dev [linux-any],x11proto-xf86dri-dev (>= 2.1.0),libdrm-dev (>= 2.4.46) [!hurd-i386],x11proto-gl-dev (>= 1.4.17),libgl1-mesa-dev (>= 9.2),libxmuu-dev (>= 1:0.99.1),libxext-dev (>= 1:0.99.1),libx11-dev (>= 2:1.6),libxrender-dev (>= 1:0.9.0),libxi-dev (>= 2:1.6.99.1),x11proto-dmx-dev (>= 1:2.2.99.1),libdmx-dev (>= 1:1.0.1),libxpm-dev (>= 1:3.5.3),libxaw7-dev (>= 1:0.99.1),libxt-dev (>= 1:0.99.1),libxmu-dev (>= 1:0.99.1),libxtst-dev (>= 1:0.99.1),libxres-dev (>= 1:0.99.1),libxfixes-dev (>= 1:3.0.0),libxv-dev,libxinerama-dev,libxshmfence-dev (>= 1.1) [!hurd-i386],libepoxy-dev [linux-any kfreebsd-any],libegl1-mesa-dev [linux-any kfreebsd-any],libgbm-dev (>= 10.2) [linux-any kfreebsd-any],libxcb1-dev,libxcb-xkb-dev,libxcb-shape0-dev,libxcb-render0-dev,libxcb-render-util0-dev,libxcb-util0-dev,libxcb-image0-dev,libxcb-icccm4-dev,libxcb-shm0-dev,libxcb-keysyms1-dev,libxcb-randr0-dev,libxcb-xv0-dev,libxcb-glx0-dev,libxcb-xf86dri0-dev (>= 1.6),xkb-data,x11-xkb-utils,libbsd-dev,libwayland-dev [linux-any],wayland-protocols (>= 1.9) [linux-any],libdbus-1-dev (>= 1.0) [linux-any],libsystemd-dev [linux-any],libmirclient-dev (>= 0.13.1) [!powerpc !ppc64el !s390x],mir-client-platform-mesa-dev,zlib1g-dev,libjpeg-turbo8-dev,perl-modules,cmake,gnutls-dev,libpam0g-dev,libpng-dev,automake,autoconf,libtool,pkg-config,openjdk-8-jdk,xorg-server-source,libfltk1.3-dev,fluid,curl,bzip2,quilt,libosmesa6-dev,libgl1-mesa-dri,libgl1-mesa-glx,libxft-dev,xfonts-base,libexpat1-dev,libfontconfig1-dev,libglu1-mesa-dev,libxcursor-dev,libxrandr-dev,libcairo2-dev,mesa-common-dev
++Build-Depends: debhelper (>= 9),dh-autoreconf,po-debconf,dpkg-dev (>= 1.16.1),quilt,appstream,lsb-release,pkg-config,bison,flex,xauth,xutils-dev (>= 1:7.6+4),xfonts-utils (>= 1:7.5+1),x11proto-bigreqs-dev (>= 1:1.1.0),x11proto-composite-dev (>= 1:0.4),x11proto-core-dev (>= 7.0.31),x11proto-damage-dev (>= 1.1),x11proto-fixes-dev (>= 1:5.0),x11proto-fonts-dev (>= 2.1.3),x11proto-kb-dev (>= 1.0.3),x11proto-xinerama-dev,x11proto-randr-dev (>= 1.5.0),x11proto-record-dev (>= 1.13.99.1),x11proto-render-dev (>= 2:0.11),x11proto-resource-dev (>= 1.2.0),x11proto-scrnsaver-dev,x11proto-video-dev,x11proto-xcmisc-dev (>= 1.2.0),x11proto-xext-dev (>= 7.2.99.901),x11proto-xf86bigfont-dev (>= 1.2.0),x11proto-xf86dga-dev (>= 2.0.99.1),x11proto-xf86vidmode-dev (>= 2.2.99.1),x11proto-present-dev,x11proto-dri3-dev,xtrans-dev (>= 1.3.5),libxau-dev (>= 1:1.0.5-2),x11proto-input-dev (>= 2.3),x11proto-dri2-dev (>= 2.8),libxdmcp-dev (>= 1:0.99.1),libxfont-dev (>= 1:2.0.1),libxkbfile-dev (>= 1:0.99.1),libpixman-1-dev (>= 0.27.2),libpciaccess-dev (>= 0.12.901),libgcrypt-dev,nettle-dev,libudev-dev (>= 151-3) [linux-any],libselinux1-dev (>= 2.0.80) [linux-any],libaudit-dev [linux-any],x11proto-xf86dri-dev (>= 2.1.0),libdrm-dev (>= 2.4.46) [!hurd-i386],x11proto-gl-dev (>= 1.4.17),libgl1-mesa-dev (>= 9.2),libxmuu-dev (>= 1:0.99.1),libxext-dev (>= 1:0.99.1),libx11-dev (>= 2:1.6),libxrender-dev (>= 1:0.9.0),libxi-dev (>= 2:1.6.99.1),x11proto-dmx-dev (>= 1:2.2.99.1),libdmx-dev (>= 1:1.0.1),libxpm-dev (>= 1:3.5.3),libxaw7-dev (>= 1:0.99.1),libxt-dev (>= 1:0.99.1),libxmu-dev (>= 1:0.99.1),libxtst-dev (>= 1:0.99.1),libxres-dev (>= 1:0.99.1),libxfixes-dev (>= 1:3.0.0),libxv-dev,libxinerama-dev,libxshmfence-dev (>= 1.1) [!hurd-i386],libepoxy-dev [linux-any kfreebsd-any],libegl1-mesa-dev [linux-any kfreebsd-any],libgbm-dev (>= 10.2) [linux-any kfreebsd-any],libxcb1-dev,libxcb-xkb-dev,libxcb-shape0-dev,libxcb-render0-dev,libxcb-render-util0-dev,libxcb-util0-dev,libxcb-image0-dev,libxcb-icccm4-dev,libxcb-shm0-dev,libxcb-keysyms1-dev,libxcb-randr0-dev,libxcb-xv0-dev,libxcb-glx0-dev,libxcb-xf86dri0-dev (>= 1.6),xkb-data,x11-xkb-utils,libbsd-dev,libwayland-dev [linux-any],wayland-protocols (>= 1.9) [linux-any],libdbus-1-dev (>= 1.0) [linux-any],libsystemd-dev [linux-any],libmirclient-dev (>= 0.13.1) [!powerpc !ppc64el !s390x],mir-client-platform-mesa-dev,zlib1g-dev,libjpeg-turbo8-dev,perl-modules,cmake,gnutls-dev,libpam0g-dev,libpng-dev,automake,autoconf,libtool,pkg-config,openjdk-8-jdk,xorg-server-source,libfltk1.3-dev,fluid,curl,bzip2,quilt,libosmesa6-dev,libgl1-mesa-dri,libgl1-mesa-glx,libxft-dev,xfonts-base,libexpat1-dev,libfontconfig1-dev,libglu1-mesa-dev,libxcursor-dev,libxrandr-dev,libcairo2-dev,mesa-common-dev
+ Homepage: http://www.tigervnc.com
+ 
+ Package: tigervncserver
+Index: pkg-tigervnc/contrib/packages/rpm/el7/SPECS/tigervnc.spec
+===================================================================
+--- pkg-tigervnc.orig/contrib/packages/rpm/el7/SPECS/tigervnc.spec
++++ pkg-tigervnc/contrib/packages/rpm/el7/SPECS/tigervnc.spec
+@@ -17,7 +17,8 @@ Source0:        %{name}-%{version}%{?sna
+ Source3:        10-libvnc.conf
+ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
+ 
+-BuildRequires:  libX11-devel, automake, autoconf, libtool, gettext, gettext-autopoint
++BuildRequires:  libX11-devel, automake, autoconf, libtool
++BuildRequires:  gettext, gettext-autopoint
+ BuildRequires:  libXext-devel, xorg-x11-server-source, libXi-devel
+ BuildRequires:  xorg-x11-xtrans-devel, xorg-x11-util-macros, libXtst-devel
+ BuildRequires:  libdrm-devel, libXt-devel, pixman-devel
+@@ -140,6 +141,11 @@ runs properly under an environment with
+ rm -rf $RPM_BUILD_ROOT
+ %setup -q -n %{name}-%{version}%{?snap:-%{snap}}
+ 
++# There is no appstream package on CentOS 7, and hence no metainfo.its
++# that msgfmt needs to generate the metainfo XML file
++sed -i 's@add_custom_target(appstream@#\0@' vncviewer/CMakeLists.txt
++sed -i 's@install(.*metainfo.xml@#\0@' vncviewer/CMakeLists.txt
++
+ cp -r /usr/share/xorg-x11-server-source/* unix/xserver
+ pushd unix/xserver
+ for all in `find . -type f -perm -001`; do
+Index: pkg-tigervnc/contrib/packages/rpm/el8/SPECS/tigervnc.spec
+===================================================================
+--- pkg-tigervnc.orig/contrib/packages/rpm/el8/SPECS/tigervnc.spec
++++ pkg-tigervnc/contrib/packages/rpm/el8/SPECS/tigervnc.spec
+@@ -17,7 +17,8 @@ Source0:        %{name}-%{version}%{?sna
+ Source3:        10-libvnc.conf
+ BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
+ 
+-BuildRequires:  libX11-devel, automake, autoconf, libtool, gettext, gettext-autopoint
++BuildRequires:  libX11-devel, automake, autoconf, libtool
++BuildRequires:  gettext, gettext-autopoint, appstream
+ BuildRequires:  libXext-devel, xorg-x11-server-source, libXi-devel
+ BuildRequires:  xorg-x11-xtrans-devel, xorg-x11-util-macros, libXtst-devel
+ BuildRequires:  libdrm-devel, libXt-devel, pixman-devel
+@@ -260,6 +261,7 @@ fi
+ %doc %{_docdir}/%{name}/README.rst
+ %{_bindir}/vncviewer
+ %{_datadir}/applications/*
++%{_datadir}/metainfo/*
+ %{_mandir}/man1/vncviewer.1*
+ 
+ %files server
+Index: pkg-tigervnc/po/CMakeLists.txt
+===================================================================
+--- pkg-tigervnc.orig/po/CMakeLists.txt
++++ pkg-tigervnc/po/CMakeLists.txt
+@@ -14,6 +14,7 @@ if (GETTEXT_XGETTEXT_EXECUTABLE)
+     ${PROJECT_SOURCE_DIR}/vncviewer/*.h
+     ${PROJECT_SOURCE_DIR}/vncviewer/*.cxx
+     ${PROJECT_SOURCE_DIR}/vncviewer/*.desktop.in.in
++    ${PROJECT_SOURCE_DIR}/vncviewer/*.metainfo.xml.in
+   )
+ 
+   add_custom_target(translations_update
+Index: pkg-tigervnc/vncviewer/CMakeLists.txt
+===================================================================
+--- pkg-tigervnc.orig/vncviewer/CMakeLists.txt
++++ pkg-tigervnc/vncviewer/CMakeLists.txt
+@@ -103,6 +103,34 @@ if(UNIX)
+   add_custom_target(desktop ALL DEPENDS vncviewer.desktop)
+   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/vncviewer.desktop DESTINATION ${CMAKE_INSTALL_FULL_DATADIR}/applications)
+ 
++  if("${GETTEXT_VERSION_STRING}" VERSION_GREATER 0.19.6)
++    add_custom_command(OUTPUT org.tigervnc.vncviewer.metainfo.xml
++      COMMAND ${GETTEXT_MSGFMT_EXECUTABLE}
++                --xml --template ${CMAKE_CURRENT_SOURCE_DIR}/org.tigervnc.vncviewer.metainfo.xml.in
++                -d ${CMAKE_SOURCE_DIR}/po -o org.tigervnc.vncviewer.metainfo.xml
++      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/org.tigervnc.vncviewer.metainfo.xml.in
++    )
++  elseif(INTLTOOL_MERGE_EXECUTABLE)
++    add_custom_command(OUTPUT org.tigervnc.vncviewer.metainfo.xml
++      COMMAND sed -e 's@<name>@<_name>@\;s@</name>@</_name>@'
++                  -e 's@<summary>@<_summary>@\;s@</summary>@</_summary>@'
++                  -e 's@<caption>@<_caption>@\;s@</caption>@</_caption>@'
++                  -e 's@<p>@<_p>@g\;s@</p>@</_p>@g'
++                ${CMAKE_CURRENT_SOURCE_DIR}/org.tigervnc.vncviewer.metainfo.xml.in > org.tigervnc.vncviewer.metainfo.xml.intl
++      COMMAND ${INTLTOOL_MERGE_EXECUTABLE}
++                -x ${CMAKE_SOURCE_DIR}/po
++                org.tigervnc.vncviewer.metainfo.xml.intl org.tigervnc.vncviewer.metainfo.xml
++      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/org.tigervnc.vncviewer.metainfo.xml.in
++    )
++  else()
++    add_custom_command(OUTPUT org.tigervnc.vncviewer.metainfo.xml
++      COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/org.tigervnc.vncviewer.metainfo.xml.in org.tigervnc.vncviewer.metainfo.xml
++      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/org.tigervnc.vncviewer.metainfo.xml.in
++    )
++  endif()
++  add_custom_target(appstream ALL DEPENDS org.tigervnc.vncviewer.metainfo.xml)
++  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.tigervnc.vncviewer.metainfo.xml DESTINATION ${CMAKE_INSTALL_FULL_DATADIR}/metainfo)
++
+   foreach(res 16 22 24 32 48)
+     install(FILES ../media/icons/tigervnc_${res}.png DESTINATION ${CMAKE_INSTALL_FULL_DATADIR}/icons/hicolor/${res}x${res}/apps RENAME tigervnc.png)
+   endforeach()
+Index: pkg-tigervnc/vncviewer/org.tigervnc.vncviewer.metainfo.xml.in
+===================================================================
+--- /dev/null
++++ pkg-tigervnc/vncviewer/org.tigervnc.vncviewer.metainfo.xml.in
+@@ -0,0 +1,45 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  (c) 2021-2022 Joachim Falk <joachim.falk@gmx.de>
++
++  Copying and distribution of this file, with or without modification, are
++  permitted in any medium without royalty provided the copyright notice and this
++  notice are preserved. This file is offered as-is, without any warranty.
++-->
++<component type="desktop-application">
++  <id>org.tigervnc.vncviewer</id>
++  <metadata_license>FSFAP</metadata_license>
++  <project_license>GPL-2.0-or-later</project_license>
++  <name>TigerVNC Viewer</name>
++  <summary>Connect to VNC server and display remote desktop</summary>
++  <content_rating type="oars-1.1"/>
++  <description>
++    <p>
++      Virtual Network Computing (VNC) is a remote display system that allows you to view and interact with a virtual desktop environment running on another computer on the network.
++      Using VNC, you can run graphical applications on a remote machine and send only the display from these applications to your local device.
++      This package contains a client which will enable you to connect to other desktops running a VNC server.
++      VNC is platform-independent and supports various operating systems and architectures as both servers and clients.
++    </p>
++    <p>
++      TigerVNC is a high-speed version of VNC based on the RealVNC 4 and X.org code bases.
++      TigerVNC started as a next-generation development effort for TightVNC on Unix and Linux platforms, but it split from its parent project in early 2009 so that TightVNC could focus on Windows platforms.
++      TigerVNC supports a variant of Tight encoding that is greatly accelerated by the use of the libjpeg-turbo JPEG codec.
++    </p>
++  </description>
++
++  <launchable type="desktop-id">vncviewer.desktop</launchable>
++  <screenshots>
++    <screenshot type="default">
++      <caption>TigerVNC Viewer connection to a CentOS machine</caption>
++      <image>https://raw.githubusercontent.com/TigerVNC/tigervnc/741d3edbfab65eda6f033078bc06347fe244ea6a/vncviewer/metainfo/tigervnc-connection-linux.jpg</image>
++    </screenshot>
++    <screenshot>
++      <caption>TigerVNC Viewer connection to a macOS machine</caption>
++      <image>https://raw.githubusercontent.com/TigerVNC/tigervnc/741d3edbfab65eda6f033078bc06347fe244ea6a/vncviewer/metainfo/tigervnc-connection-macos.jpg</image>
++    </screenshot>
++    <screenshot>
++      <caption>TigerVNC Viewer connection to a Windows machine</caption>
++      <image>https://raw.githubusercontent.com/TigerVNC/tigervnc/741d3edbfab65eda6f033078bc06347fe244ea6a/vncviewer/metainfo/tigervnc-connection-windows.jpg</image>
++    </screenshot>
++  </screenshots>
++</component>

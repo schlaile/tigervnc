@@ -1,0 +1,29 @@
+#!/bin/sh
+set -e
+
+bindir=/usr/bin
+sbindir=/usr/sbin
+mandir=/usr/share/man
+
+if [ "$1" = "remove" ] ; then
+  for tiger in tigervncserver Xtigervnc; do
+    notiger=`echo $tiger | sed -e 's/tiger//'`;
+    update-alternatives --remove $notiger $bindir/$tiger
+  done
+  for tiger in tigervncsession; do
+    notiger=`echo $tiger | sed -e 's/tiger//'`;
+    update-alternatives --remove $notiger $sbindir/$tiger
+  done
+elif [ "$1" = "upgrade" ] ; then
+  # Check for downgrade below 1.11.0
+  if dpkg --compare-versions "$2" lt-nl 1.11.0; then
+    for tiger in tigervncsession; do
+      notiger=`echo $tiger | sed -e 's/tiger//'`;
+      update-alternatives --remove $notiger $sbindir/$tiger
+    done
+  fi
+fi
+
+#DEBHELPER#
+
+exit 0

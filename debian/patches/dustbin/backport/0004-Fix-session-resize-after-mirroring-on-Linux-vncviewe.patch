@@ -1,0 +1,52 @@
+From 88e96d645fec2c071640cb47da934657ea2ce058 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?William=20Sj=C3=B6blom?= <wilsj@cendio.com>
+Date: Wed, 19 Jan 2022 10:04:53 +0100
+Subject: [PATCH] Fix session resize after mirroring on Linux vncviewer
+
+If monitor mirroring was enabled while in a session with vncviewer
+running on Linux, the session would not be properly resized on the
+server. This was a consequence of only looking at the size and
+coordinates of each screen when matching against existing screens after
+the screen layout was changed, when in fact we have two (or more)
+monitors with the same coordinates and size (but differing ids). This
+led to the same monitor being added twice to the layout which would
+later fail layout validation, resulting in no resize request being sent
+to the server.
+
+When matching, we now also check if the existing screen is not already
+present in the layout before considering it a match.
+---
+ vncviewer/DesktopWindow.cxx | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+Index: pkg-tigervnc/vncviewer/DesktopWindow.cxx
+===================================================================
+--- pkg-tigervnc.orig/vncviewer/DesktopWindow.cxx
++++ pkg-tigervnc/vncviewer/DesktopWindow.cxx
+@@ -21,6 +21,8 @@
+ #include <config.h>
+ #endif
+ 
++#include <algorithm>
++
+ #include <assert.h>
+ #include <stdio.h>
+ #include <string.h>
+@@ -1314,13 +1316,15 @@ void DesktopWindow::remoteResize(int wid
+       sx -= viewport_rect.tl.x;
+       sy -= viewport_rect.tl.y;
+ 
+-      // Look for perfectly matching existing screen...
++      // Look for perfectly matching existing screen that is not yet present in
++      // in the screen layout...
+       for (iter = cc->server.screenLayout().begin();
+            iter != cc->server.screenLayout().end(); ++iter) {
+         if ((iter->dimensions.tl.x == sx) &&
+             (iter->dimensions.tl.y == sy) &&
+             (iter->dimensions.width() == sw) &&
+-            (iter->dimensions.height() == sh))
++            (iter->dimensions.height() == sh) &&
++            (std::find(layout.begin(), layout.end(), *iter) == layout.end()))
+           break;
+       }
+ 

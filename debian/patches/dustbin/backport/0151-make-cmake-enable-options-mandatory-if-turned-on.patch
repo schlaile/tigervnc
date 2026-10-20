@@ -1,0 +1,94 @@
+Description: Make cmake enable options mandatory if turned on.
+Author: Joachim Falk <joachim.falk@gmx.de>
+Forwarded: yes
+
+Index: pkg-tigervnc/CMakeLists.txt
+===================================================================
+--- pkg-tigervnc.orig/CMakeLists.txt
++++ pkg-tigervnc/CMakeLists.txt
+@@ -136,8 +136,8 @@ find_package(ZLIB REQUIRED)
+ find_package(Pixman REQUIRED)
+ 
+ # Check for gettext
+-option(ENABLE_NLS "Enable translation of program messages" ON)
+-if(ENABLE_NLS)
++option(ENABLE_NLS "Enable translation of program messages")
++if(NOT DEFINED ENABLE_NLS OR ENABLE_NLS)
+   # Tools
+   find_package(Gettext)
+ 
+@@ -171,13 +171,19 @@ if(ENABLE_NLS)
+   endif()
+ 
+   if(NOT GETTEXT_FOUND OR NOT ICONV_FOUND)
+-    message(WARNING "Gettext NOT found.  Native Language Support disabled.")
+-    set(ENABLE_NLS 0)
++    if(DEFINED ENABLE_NLS)
++      message(FATAL_ERROR "Native Language Support requested, but gettext NOT found!")
++    else()
++      message(WARNING "Gettext NOT found.  Native Language Support disabled.")
++      set(ENABLE_NLS 0)
++    endif()
++  else()
++    set(ENABLE_NLS 1)
+   endif()
+ endif()
+ 
+-option(ENABLE_H264 "Enable H.264 RFB encoding" ON)
+-if(ENABLE_H264)
++option(ENABLE_H264 "Enable H.264 RFB encoding")
++if(NOT DEFINED ENABLE_H264 OR ENABLE_H264)
+   if(WIN32)
+     add_definitions("-DHAVE_H264")
+     set(H264_LIBS "WIN")  # may be LIBAV in the future
+@@ -192,8 +198,12 @@ if(ENABLE_H264)
+       add_definitions("-DHAVE_H264")
+       set(H264_LIBS "LIBAV")
+     else()
+-      set(H264_LIBS "NONE")
+-      message(WARNING "FFMPEG support can't be found")
++      if(DEFINED ENABLE_H264)
++        message(FATAL_ERROR "H.264 RFB encoding support requested, but FFMPEG support can't be found!")
++      else()
++        set(H264_LIBS "NONE")
++        message(WARNING "FFMPEG support can't be found. No H.264 RFB encoding support.")
++      endif()
+     endif()
+   endif()
+   add_definitions("-DH264_${H264_LIBS}")
+@@ -271,19 +281,31 @@ if(BUILD_VIEWER)
+ endif()
+ 
+ # Check for GNUTLS library
+-option(ENABLE_GNUTLS "Enable protocol encryption and advanced authentication" ON)
+-if(ENABLE_GNUTLS)
++option(ENABLE_GNUTLS "Enable protocol encryption and advanced authentication")
++if(NOT DEFINED ENABLE_GNUTLS OR ENABLE_GNUTLS)
+   find_package(GnuTLS)
+   if (GNUTLS_FOUND)
+     add_definitions("-DHAVE_GNUTLS")
++  else()
++    if(DEFINED ENABLE_GNUTLS)
++      message(FATAL_ERROR "GnuTLS support requested, but library could not be found!")
++    else()
++      message(WARNING "GnuTLS NOT found. SSL support disabled.")
++    endif()
+   endif()
+ endif()
+ 
+-option(ENABLE_NETTLE "Enable RSA-AES security types" ON)
+-if (ENABLE_NETTLE)
++option(ENABLE_NETTLE "Enable RSA-AES security types")
++if (NOT DEFINED ENABLE_NETTLE OR ENABLE_NETTLE)
+   find_package(Nettle)
+   if (NETTLE_FOUND)
+     add_definitions("-DHAVE_NETTLE")
++  else()
++    if(DEFINED ENABLE_NETTLE)
++      message(FATAL_ERROR "RSA-AES security types requested, but Nettle library could not be found!")
++    else()
++      message(WARNING "Nettle library NOT found. RSA-AES security types disabled.")
++    endif()
+   endif()
+ endif()
+ 

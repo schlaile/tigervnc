@@ -1,0 +1,30 @@
+Description: Update WM_CLASS to correspond to the one given in the xtigervncviewer.desktop file
+Author: Joachim Falk
+Forwarded: no
+
+--- a/vncviewer/vncviewer.cxx
++++ b/vncviewer/vncviewer.cxx
+@@ -325,7 +325,7 @@
+ 
+   // Proper Gnome Shell integration requires that we set a sensible
+   // WM_CLASS for the window.
+-  Fl_Window::default_xclass("vncviewer");
++  Fl_Window::default_xclass("TigerVNC Viewer");
+ 
+   // Set the default icon for all windows.
+ #ifdef WIN32
+--- a/vncviewer/vncviewer.desktop.in.in
++++ b/vncviewer/vncviewer.desktop.in.in
+@@ -2,9 +2,10 @@
+ Name=TigerVNC
+ GenericName=Remote desktop viewer
+ Comment=Connect to VNC server and display remote desktop
+-Exec=@CMAKE_INSTALL_FULL_BINDIR@/vncviewer
++Keywords=remote desktop;vnc;
++Exec=@CMAKE_INSTALL_FULL_BINDIR@/xtigervncviewer
+ Icon=tigervnc
+ Terminal=false
+ Type=Application
+-StartupWMClass=vncviewer
++StartupWMClass=TigerVNC Viewer
+ Categories=Network;RemoteAccess;

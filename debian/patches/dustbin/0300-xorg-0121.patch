@@ -1,0 +1,61 @@
+Description: Support of X.Org server >= 1.21 for TigerVNC 1.12
+Author: Joachim Falk <joachim.falk@gmx.de>
+
+Index: pkg-tigervnc/unix/xserver/hw/vnc/xorg-version.h
+===================================================================
+--- pkg-tigervnc.orig/unix/xserver/hw/vnc/xorg-version.h
++++ pkg-tigervnc/unix/xserver/hw/vnc/xorg-version.h
+@@ -33,8 +33,8 @@
+ #error "X.Org older than 1.16 is not supported"
+ #endif
+ 
+-#if XORG_AT_LEAST(1, 21, 0)
+-#error "X.Org newer than 1.20 is not supported"
++#if XORG_AT_LEAST(1, 22, 0)
++#error "X.Org newer than 1.21 is not supported"
+ #endif
+ 
+ #endif
+Index: pkg-tigervnc/unix/xserver/hw/vnc/Makefile.am
+===================================================================
+--- pkg-tigervnc.orig/unix/xserver/hw/vnc/Makefile.am
++++ pkg-tigervnc/unix/xserver/hw/vnc/Makefile.am
+@@ -20,8 +20,8 @@ libvnccommon_la_SOURCES = $(HDRS) \
+ 	vncBlockHandler.c XorgGlue.c RandrGlue.c RFBGlue.cc XserverDesktop.cc \
+ 	vncInput.c vncInputXKB.c qnum_to_xorgevdev.c qnum_to_xorgkbd.c
+ 
+-libvnccommon_la_CPPFLAGS = -DVENDOR_RELEASE="$(VENDOR_RELEASE)" -I$(TIGERVNC_SRCDIR)/unix/common \
+-	-DVENDOR_STRING="\"$(VENDOR_STRING)\"" -I$(TIGERVNC_SRCDIR)/common -UHAVE_CONFIG_H \
++libvnccommon_la_CPPFLAGS = -DVENDOR_RELEASE="\"$(VERSION)\"" -I$(TIGERVNC_SRCDIR)/unix/common \
++	-DVENDOR_STRING="\"$(VENDOR_NAME_SHORT)\"" -I$(TIGERVNC_SRCDIR)/common -UHAVE_CONFIG_H \
+ 	-I$(TIGERVNC_SRCDIR)/unix/vncconfig $(XVNC_CPPFLAGS) ${XSERVERLIBS_CFLAGS} \
+ 	-I$(top_srcdir)/include
+ 
+@@ -40,8 +40,8 @@ nodist_EXTRA_Xvnc_SOURCES = dummy.cxx
+ 
+ Xvnc_CPPFLAGS = $(XVNC_CPPFLAGS) -DTIGERVNC -DNO_MODULE_EXTS \
+ 	-UHAVE_CONFIG_H \
+-	-DXFree86Server -DVENDOR_RELEASE="$(VENDOR_RELEASE)" \
+-	-DVENDOR_STRING="\"$(VENDOR_STRING)\"" -I$(TIGERVNC_SRCDIR)/common -I$(TIGERVNC_SRCDIR)/unix/common \
++	-DXFree86Server -DVENDOR_RELEASE="\"$(VERSION)\"" \
++	-DVENDOR_STRING="\"$(VENDOR_NAME_SHORT)\"" -I$(TIGERVNC_SRCDIR)/common -I$(TIGERVNC_SRCDIR)/unix/common \
+ 	-I$(top_srcdir)/include ${XSERVERLIBS_CFLAGS}
+ 
+ Xvnc_LDADD = $(XVNC_LIBS) libvnccommon.la $(COMMON_LIBS) \
+Index: pkg-tigervnc/unix/xserver/hw/vnc/xvnc.c
+===================================================================
+--- pkg-tigervnc.orig/unix/xserver/hw/vnc/xvnc.c
++++ pkg-tigervnc/unix/xserver/hw/vnc/xvnc.c
+@@ -67,9 +67,10 @@ from the X Consortium.
+ extern char buildtime[];
+ 
+ #undef VENDOR_RELEASE
+-#undef VENDOR_STRING
+ #include "version-config.h"
+-#include "site.h"
++#ifndef DEFAULT_LOG_VERBOSITY
++#define DEFAULT_LOG_VERBOSITY           0
++#endif
+ 
+ #define XVNCVERSION "TigerVNC 1.12.0"
+ #define XVNCCOPYRIGHT ("Copyright (C) 1999-2021 TigerVNC Team and many others (see README.rst)\n" \

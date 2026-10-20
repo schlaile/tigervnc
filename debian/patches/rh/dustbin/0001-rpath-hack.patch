@@ -1,0 +1,28 @@
+From 2489f2f38eb32d9dd03718a36cbdbdf13d2f8b9b Mon Sep 17 00:00:00 2001
+From: Adam Jackson <ajax@redhat.com>
+Date: Thu, 12 Nov 2015 11:10:11 -0500
+Subject: [PATCH] rpath hack
+
+Normally, rpath is undesirable.  But for the X server we _know_ we need
+Mesa's libGL, which will always be in %{_libdir}, and not any third-party
+libGL that may be configured using ld.so.conf.
+
+---
+ configure.ac       | 1 +
+ 1 files changed, 1 insertions(+), 0 deletion(-)
+
+diff --git a/configure.ac b/configure.ac
+index fa15a2d..a5af1e0 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -1357,6 +1357,7 @@ else
+ fi
+ AM_CONDITIONAL(GLX, test "x$GLX" = xyes)
+
++GLX_SYS_LIBS="$GLX_SYS_LIBS -Wl,-rpath=\$(libdir)"
+ AC_SUBST([GLX_DEFINES])
+ AC_SUBST([GLX_SYS_LIBS])
+
+--
+2.5.0
+

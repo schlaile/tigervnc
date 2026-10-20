@@ -1,0 +1,7 @@
+usr/bin/Xtigervnc usr/bin
+usr/bin/tigervncserver usr/bin
+etc/tigervnc/vncserver.users etc/tigervnc
+etc/X11/Xtigervnc-session etc/X11
+usr/lib/systemd/system/tigervncserver@.service usr/lib/systemd/system
+usr/libexec/tigervncsession-start
+usr/sbin/tigervncsession

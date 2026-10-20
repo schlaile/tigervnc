@@ -1,0 +1,28 @@
+Description: Fix linking against libX11 and libXext
+Author: Joachim Falk <joachim.falk@gmx.de>
+Forwarded: not-needed
+
+Index: pkg-tigervnc/CMakeLists.txt
+===================================================================
+--- pkg-tigervnc.orig/CMakeLists.txt
++++ pkg-tigervnc/CMakeLists.txt
+@@ -255,12 +255,19 @@ if(BUILD_VIEWER)
+     if(X11_Xinerama_FOUND)
+       set(FLTK_LIBRARIES ${FLTK_LIBRARIES} ${X11_Xinerama_LIB})
+     endif()
++    if(X11_Xext_FOUND)
++      set(FLTK_LIBRARIES ${FLTK_LIBRARIES} ${X11_Xext_LIB})
++    endif()
+     if(X11_Xfixes_FOUND)
+       set(FLTK_LIBRARIES ${FLTK_LIBRARIES} ${X11_Xfixes_LIB})
+     endif()
+     if(X11_Xcursor_FOUND)
+       set(FLTK_LIBRARIES ${FLTK_LIBRARIES} ${X11_Xcursor_LIB})
+     endif()
++    # X11_FOUND is correct not X11_X11_FOUND
++    if(X11_FOUND)
++      set(FLTK_LIBRARIES ${FLTK_LIBRARIES} ${X11_X11_LIB})
++    endif()
+     if(X11_Xrender_FOUND)
+       set(FLTK_LIBRARIES ${FLTK_LIBRARIES} ${X11_Xrender_LIB})
+     endif()

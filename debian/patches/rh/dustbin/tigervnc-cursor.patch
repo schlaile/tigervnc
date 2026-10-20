@@ -1,0 +1,17 @@
+Description: Make sure cursor is defined before using it.
+Origin: RHEL 7.4 (tigervnc-1.8.0-2.el7_4.src.rpm)
+Forwarded: no
+
+Index: pkg-tigervnc/vncviewer/Viewport.cxx
+===================================================================
+--- pkg-tigervnc.orig/vncviewer/Viewport.cxx
++++ pkg-tigervnc/vncviewer/Viewport.cxx
+@@ -279,7 +279,7 @@ void Viewport::setCursor(int width, int
+     }
+   }
+ 
+-  if (Fl::belowmouse() == this)
++  if (Fl::belowmouse() == this && cursor)
+     window()->cursor(cursor, cursorHotspot.x, cursorHotspot.y);
+ }
+ 

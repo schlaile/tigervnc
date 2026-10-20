@@ -1,0 +1,40 @@
+Description: Fix inetd mode of Xtigervnc
+  Upstream commit 5cd38b66896c00fd56e9c54eead430d02011c38f
+  "Print Xvnc banner before all the usage options" changes Xtigervnc to
+  print a banner even with -inetd option, rendering it useless for inetd
+  usage. Xtigervnc will output to stdout
+  .
+  . Xvnc TigerVNC 1.15.0 - built 2025-04-18 09:01
+  . Copyright (C) 1999-2025 TigerVNC team and many others (see README.rst)
+  . See https://www.tigervnc.org for information on TigerVNC.
+  . Underlying X server release 12101016
+  .
+  . RFB 003.008
+  .
+  giving a protocol error for VNC clients. Reverting the upstream commit
+  makes it usable again. The following patch is not a complete revert
+  but rather fewer changes.
+Author: Stephan Springl <springl-tigervnc@bfw-online.de>
+Forwarded: no
+
+Index: pkg-tigervnc/unix/xserver/hw/vnc/xvnc.c
+===================================================================
+--- pkg-tigervnc.orig/unix/xserver/hw/vnc/xvnc.c
++++ pkg-tigervnc/unix/xserver/hw/vnc/xvnc.c
+@@ -214,6 +214,8 @@ ddxInputThreadInit(void)
+ void
+ ddxUseMsg(void)
+ {
++    vncPrintBanner();
++
+     ErrorF("-pixdepths list-of-int support given pixmap depths\n");
+     ErrorF("+/-render		   turn on/off RENDER extension support"
+            "(default on)\n");
+@@ -1259,7 +1261,5 @@ vncClientGone(int fd)
+ int
+ main(int argc, char *argv[], char *envp[])
+ {
+-    vncPrintBanner();
+-
+     return dix_main(argc, argv, envp);
+ }

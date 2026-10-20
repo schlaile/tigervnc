@@ -1,0 +1,18 @@
+Description: Find fltk shared libraries
+Author: Matthias Klose <doko@debian.org>
+Forwarded: not-needed
+
+Index: pkg-tigervnc/CMakeLists.txt
+===================================================================
+--- pkg-tigervnc.orig/CMakeLists.txt
++++ pkg-tigervnc/CMakeLists.txt
+@@ -242,7 +242,8 @@ if(BUILD_VIEWER)
+   set(FLTK_SKIP_FLUID TRUE)
+   set(FLTK_SKIP_OPENGL TRUE)
+   set(FLTK_SKIP_FORMS TRUE)
+-  find_package(FLTK REQUIRED)
++# find_package(FLTK REQUIRED)
++  set (FLTK_LIBRARIES "fltk_images;fltk")
+   if(UNIX AND NOT APPLE)
+     # No proper handling for extra X11 libs that FLTK might need...
+     if(X11_Xft_FOUND)

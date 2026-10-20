@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+bindir=/usr/bin
+mandir=/usr/share/man
+
+if [ "$1" = "upgrade" ]; then
+  # Check for upgrade from below or equal to 1.12.0+dfsg-7
+  if dpkg --compare-versions "$2" le-nl 1.12.0+dfsg-7; then
+    if ! dpkg -s tigervnc-tools >/dev/null 2>/dev/null; then
+      # When upgrading from below or equal to 1.12.0+dfsg-7 and the
+      # tigervnc-tools package is not installed, remove a possible remaining
+      # dangling tigervncpasswd alternative (closes: #1027288).
+      for tiger in tigervncpasswd; do
+        notiger=`echo $tiger | sed -e 's/tiger//'`;
+        update-alternatives --remove $notiger $bindir/$tiger
+      done
+    fi
+  fi
+fi
+
+#DEBHELPER#
+
+exit 0

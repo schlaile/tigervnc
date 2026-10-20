@@ -1,0 +1,65 @@
+Description: Update upstream patch to ltmain.sh
+	GNU Libtool has modified some of the upstream xorg source patch to
+	ltmain.sh in ltmain.in, so the xorg source patch must be updated to
+	build with the latest release of libtool in Debian.
+
+	Also, avoids reopening bug #966238 in tigervnc-xorg-extension.
+Author: Ileana Dumitrescu <ileanadumitrescu95@gmail.com>
+Date: Wed, 14 Oct 2026 16:05:24 +0300
+
+--- a/contrib/packages/deb/ubuntu-jammy/debian/xorg-source-patches/debian_libtool.patch
++++ b/contrib/packages/deb/ubuntu-jammy/debian/xorg-source-patches/debian_libtool.patch
+@@ -10,9 +10,9 @@
+ -	    for deplib in $dependency_libs; do
+ -	      deplibs="$deplib $deplibs"
+ -	      if $opt_preserve_dup_deps; then
+--		case "$tmp_libs " in
+--		*" $deplib "*) func_append specialdeplibs " $deplib" ;;
+--		esac
++-	        case "$tmp_libs " in
++-	          *" $deplib "*) func_append specialdeplibs " $deplib" ;;
++-	        esac
+ -	      fi
+ -	      func_append tmp_libs " $deplib"
+ -	    done
+@@ -23,9 +23,9 @@
+ +	  for deplib in $dependency_libs; do
+ +	    deplibs="$deplib $deplibs"
+ +	    if $opt_preserve_dup_deps; then
+-+	      case "$tmp_libs " in
+-+	      *" $deplib "*) func_append specialdeplibs " $deplib" ;;
+-+	      esac
+++	        case "$tmp_libs " in
+++	          *" $deplib "*) func_append specialdeplibs " $deplib" ;;
+++	        esac
+ +	    fi
+ +	    func_append tmp_libs " $deplib"
+ +	  done
+--- a/contrib/packages/deb/ubuntu-noble/debian/xorg-source-patches/debian_libtool.patch
++++ b/contrib/packages/deb/ubuntu-noble/debian/xorg-source-patches/debian_libtool.patch
+@@ -10,9 +10,9 @@
+ -	    for deplib in $dependency_libs; do
+ -	      deplibs="$deplib $deplibs"
+ -	      if $opt_preserve_dup_deps; then
+--		case "$tmp_libs " in
+--		*" $deplib "*) func_append specialdeplibs " $deplib" ;;
+--		esac
++-	        case "$tmp_libs " in
++-	          *" $deplib "*) func_append specialdeplibs " $deplib" ;;
++-	        esac
+ -	      fi
+ -	      func_append tmp_libs " $deplib"
+ -	    done
+@@ -23,9 +23,9 @@
+ +	  for deplib in $dependency_libs; do
+ +	    deplibs="$deplib $deplibs"
+ +	    if $opt_preserve_dup_deps; then
+-+	      case "$tmp_libs " in
+-+	      *" $deplib "*) func_append specialdeplibs " $deplib" ;;
+-+	      esac
+++	        case "$tmp_libs " in
+++	          *" $deplib "*) func_append specialdeplibs " $deplib" ;;
+++	        esac
+ +	    fi
+ +	    func_append tmp_libs " $deplib"
+ +	  done

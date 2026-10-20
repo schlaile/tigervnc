@@ -1,0 +1,359 @@
+'\" t
+.\" ** The above line should force tbl to be a preprocessor **
+.\" Man page for x0tigervncserver
+.\"
+.\" Copyright (C) 2021 - 2024 Joachim.Falk@gmx.de
+.\" Copyright (C) Constantin Kaplinsky and others.
+.\"
+.\" You may distribute under the terms of the GNU General Public
+.\" License as specified in the file COPYING that comes with the
+.\" Debian GNU/Linux distribution.
+.\"
+.TH x0tigervncserver 1 "Nov 10th, 2024" "TigerVNC 1.14.1" "Virtual Network Computing"
+.SH NAME
+x0tigervncserver \- start or stop a TigerVNC scraping server
+.SH SYNOPSIS
+.
+.B x0tigervncserver
+.RI [ :display# | \fB\-display\fP
+.IR :display# ]
+.RB [ \-rfbport
+.IR rfbport# ]
+.RB [ \-rfbunixpath
+.IR Unix socket path ]
+.RB [ \-rfbunixmode
+.IR permissions ]
+.RB [ \-localhost
+.RI [ yes | no ]]
+.RB [ \-SecurityTypes
+.IR sec-types ]
+.RB [ \-RequireUsername
+.RI [ yes | no ]]
+.RB [ \-PasswordFile | \-rfbauth
+.IR passwd-file ]
+.RB [ \-PlainUsers
+.IR user-list ]
+.RB [ \-PAMService | \-pam_service
+.IR service-name ]
+.RB [ \-X509Key
+.IR cert-key-file ]
+.RB [ \-X509Cert
+.IR cert-file ]
+.RB [ \-RSAKey
+.IR rsa-key-file ]
+.RB [ \-fg ]
+.RB [ \-useold ]
+.RB [ \-verbose ]
+.RB [ \-dry-run ]
+.RB [ \-Geometry
+.IR <width>x<height> [{ + , - } <xoffset> { + , - } <yoffset> ]]
+.RB [ \-pidfile
+.IR pid-file-path ]
+.RI [ "X0tigervnc options..." ]
+.
+.br
+.B x0tigervncserver \-kill
+.RI [{ :display# , :* }| "\fB\-display\fP " { :display# , :* }]
+.RB [ \-rfbport
+.IR rfbport# ]
+.RB [ \-rfbunixpath
+.IR Unix socket path ]
+.RB [ \-dry-run ]
+.RB [ \-verbose ]
+.RB [ \-clean ]
+.
+.br
+.B x0tigervncserver \-list
+.RI [{ :display# , :* }| "\fB\-display\fP " { :display# , :* }]
+.RB [ \-rfbport
+.IR rfbport# ]
+.RB [ \-rfbunixpath
+.IR Unix socket path ]
+.RB [ \-cleanstale ]
+.
+.br
+.B x0tigervncserver -version
+.
+.SH DESCRIPTION
+The \fBx0tigervncserver\fP wrapper script is used to start the \fBX0tigervnc\fP
+server that makes an X display remotely accessible via VNC (Virtual Network
+Computing). Unlike \fBXtigervnc\fP, this server does not create a virtual
+display. Instead, it just shares an existing X server (typically, that one
+connected to the physical screen). The XDamage extension will be used if the
+existing X server supports it. Otherwise, \fBX0tigervnc\fP will fall back to
+polling the screen for changes.
+
+As usual, the VNC desktop can be connected to with the \fBxtigervncviewer\fP
+VNC viewer or any other VNC viewer. For details, see the
+.BR xtigervncviewer (1)
+man page or execute "xtigervncviewer \-help".
+
+System defaults for this wrapper script are found in
+\fI/etc/tigervnc/vncserver-config-defaults\fP. These defaults can be
+overwritten by the user defaults given in \fI~/.config/tigervnc/config.pl\fP (see the
+.BR tigervnc.conf (5x)
+man page). Next, command-line options overwrite the settings in both tigervnc
+configuration files. Finally, options from
+\fI/etc/tigervnc/vncserver-config-mandatory\fP have the highest priority
+overwriting all previous settings.
+
+\fBWARNING! There is nothing stopping users from constructing their own wrapper
+script that calls X0tigervnc directly to bypass any options defined in the
+/etc/tigervnc/vncserver-config-mandatory configuration file.\fP
+.
+.SH OPTIONS
+You can get a list of options by giving \fB\-h\fP as an option to
+\fBx0tigervncserver\fP. In addition to the options listed below, any
+unrecognized options will be passed to \fBX0tigervnc\fP \(en see the
+.BR X0tigervnc (1)
+man page or "\fBX0tigervnc \-help\fP" for details.
+.
+.TP
+.IR :display# | \fB\-display\fP " " :display#
+Specifies the X11 display to be shared by the \fBX0tigervnc\fP server.
+.
+.TP
+.B \-rfbport \fIrfbport#\fP
+Specifies the TCP port on which \fBX0tigervnc\fP listens for connections from viewers
+(the protocol used in VNC is called RFB \(en "remote framebuffer"). The default
+is 5900 plus the display number display#.
+To disable, specify -1.
+.
+.TP
+.B \-rfbunixpath \fIUnix socket path\fP
+Specifies a path to be used for listening on as a Unix domain socket by the \fBX0tigervnc\fP server.
+No Unix domain socket is created if this option is not provided.
+.
+.TP
+.B \-rfbunixmode \fIpermissions\fP
+Specifies the mode of the Unix domain socket. The default is \fI0600\fP.
+.
+.TP
+.B \-localhost\fP [\fIyes\fP|\fIno\fP]
+Should the TigerVNC server only listen on localhost for incoming TigerVNC
+connections. Useful if you use SSH and want to stop non-SSH connections from
+any other hosts. If the option is not specified, then the behavior is as
+follows: We will only listen on localhost if the \fIsec-types\fP list does not
+contain any \fITLS*\fP or \fIX509*\fP security types or if the list contains at
+least one \fI*None\fP security type. Otherwise, we will listen on all network
+addresses of the machine.
+.
+.TP
+.B \-SecurityTypes \fIsec-types\fP
+Specify which security scheme to use for incoming connections. Valid values
+are a comma-separated list of \fINone\fP, \fIVncAuth\fP, \fIPlain\fP,
+\fITLSNone\fP, \fITLSVnc\fP, \fITLSPlain\fP, \fIX509None\fP, \fIX509Vnc\fP,
+\fIX509Plain\fP, \fIRA2\fP, \fIRA2ne\fP, \fIRA2_256\fP, and \fIRA2ne_256\fP.
+Default is \fIVncAuth\fP if \fB\-localhost\fP is not given and
+\fIVncAuth,TLSVnc\fP if \fB\-localhost\fP \fIno\fP is given.
+.
+.TP
+.B \-RequireUsername\fP [\fIyes\fP|\fIno\fP]
+Specifies for the \fIRSA-AES\fP security types (i.e., \fIRA2\fP, \fIRA2ne\fP,
+\fIRA2_256\fP, and \fIRA2ne_256\fP) if authentication should be performed via
+Unix username and password (\fB\-RequireUsername\fI yes\fP) or the VNC
+password file (\fB\-RequireUsername\fI no\fP). The default is to perform
+authentication via the VNC password file.
+.
+.TP
+.B \-PasswordFile \fIpasswd-file\fP | \-rfbauth \fIpasswd-file\fP
+Specifies the file containing the password used to authenticate viewers for the
+security types \fIVncAuth\fP, \fITLSVnc\fP, \fIX509Vnc\fP, \fIRA2\fP,
+\fIRA2ne\fP, \fIRA2_256\fP, and \fIRA2ne_256\fP. The default password file is
+\fI~/.config/tigervnc/passwd\fP. For the \fIRSA-AES\fP security types, authentication via
+the VNC password file is only performed in case \fB\-RequireUsername\fP is \fIno\fP,
+which is the default.
+.
+.TP
+.B \-PlainUsers \fIuser-list\fP
+Specifies a comma-separated list of user names that are allowed to authenticate
+via any of the\fI *Plain\fP security types (\fIPlain\fP, \fITLSPlain\fP, etc.)
+or the \fIRSA-AES\fP security types (\fIRA2\fP, \fIRA2ne\fP, etc.) in case
+\fB\-RequireUsername\fP is \fIyes\fP. Specify \fI*\fP to allow any user to
+authenticate using these security types. The default only allows the user who
+has started the \fBx0tigervncserver\fP wrapper script.
+.
+.TP
+\fB\-PAMService \fIservice-name\fP | \fB\-pam_service \fIservice-name\fP
+Specifies the PAM service name to use when authenticating users using any of the
+\fI *Plain\fP security types or the \fIRSA-AES\fP security types in case
+\fB\-RequireUsername\fP is \fIyes\fP. Default is\fB vnc\fP if /etc/pam.d/vnc is
+present and \fBtigervnc\fP otherwise. The tigervnc-common package ships the
+\fI/etc/pam.d/tigervnc\fP PAM service configuration for use by \fBx0tigervncserver\fP.
+.
+.TP
+.B \-X509Cert\fP \fIcert-path\fP and\fB \-X509Key\fP \fIkey-path\fP
+Path to a X509 certificate in PEM format to be used for all \fIX509\fP based
+security types (i.e., \fIX509None\fP, \fIX509Vnc\fP, etc.) as well as its
+private key also in PEM format. If the certificate and its key are not provided
+via the\fB \-X509Cert\fP and\fB \-X509Key\fP command-line options or their
+corresponding configuration parameters in the configuration files
+\fI/etc/tigervnc/vncserver-config-defaults\fP, \fI~/.config/tigervnc/config.pl\fP, or
+\fI/etc/tigervnc/vncserver-config-mandatory\fP, then the \fBx0tigervncserver\fP
+wrapper script auto-generates a self-signed certificate. The auto-generated
+self-signed certificate and its private key are stored in the files
+~/.config/tigervnc/\fIhost\fP-SrvCert.pem and ~/.config/tigervnc/\fIhost\fP-SrvKey.pem.
+.
+.TP
+.B \-RSAKey\fP \fIrsa-key-path\fP
+Path to an RSA key in PEM format used by all \fIRSA-AES\fP security types.
+If the RSA key is not provided via the\fB \-RSAKey\fP command-line option or
+the corresponding configuration parameter in the configuration files
+\fI/etc/tigervnc/vncserver-config-defaults\fP, \fI~/.config/tigervnc/config.pl\fP, or
+\fI/etc/tigervnc/vncserver-config-mandatory\fP, then the \fBx0tigervncserver\fP
+wrapper script auto-generates an RSA key. The auto-generated key is stored
+in the file ~/.config/tigervnc/\fIhost\fP-SrvRsaKey.pem.
+.
+.TP
+.B \-fg
+Runs the \fBX0tigervnc\fP server as a foreground process. Thus, the server can
+be aborted with CTRL-C.
+.
+.TP
+.B \-useold
+Only start a new TigerVNC server if a VNC server for your account is not
+already running on the requested display number \fIdisplay#\fP and RFB port
+\fIrfbport#\fP. If no display number is requested, a new TigerVNC server
+will only be started if there is no TigerVNC server running under your user
+account. In any case, information about the newly started TigerVNC server or
+the reused TigerVNC server session will be printed.
+.
+.TP
+.B \-verbose
+This will turn on some debug output.
+.
+.TP
+.B \-dry-run
+Do not actually do anything, but only perform the checks if the requested
+action would be possible. For example, there will be checks performed for the
+availability of the requested display number display#.
+.
+.TP
+.IR \fB\-Geometry\fP " " <width>x<height> [{ + , - } <xoffset> { + , - } <yoffset> ]
+Specifies the screen area that will be shown to VNC clients, e.g.,
+\fI640x480+320+240\fP. The format is \fI<width>x<height>+<xoffset>+<yoffset>\fP,
+where `+' signs can be replaced with `-' signs to specify offsets from the
+right and/or from the bottom of the screen. Offsets are optional, +0+0 is
+assumed by default (top left corner). If the argument is empty, full screen is
+shown to VNC clients (this is the default).
+.
+.TP
+.B \-pidfile
+Specifies the file that stores the pid of the X0tigervnc server to be started.
+.
+.TP
+.B \-kill [ \fI:{display#,*}\fP | \fB\-display \fI:{display#,*}\fP ] [ \fB\-rfbport \fIrfbport#\fP ]
+This kills a TigerVNC server previously started with \fBx0tigervncserver\fP or
+\fBtigervncserver\fP. It does this by killing the VNC server process, whose
+process ID is stored in the file ~/.config/tigervnc/\fIhost\fP:\fIrfbport#\fP.pid. If\fB
+:*\fP is given, then \fBx0tigervncserver\fP tries to kill all VNC server
+processes with pidfiles in \fI~/.config/tigervnc\fP on the local machine. If no display number is
+given, then \fBx0tigervncserver\fP tries to kill the VNC server process of the
+user on the local machine if only one such process is running and has a pidfile
+in \fI~/.config/tigervnc\fP.
+.
+.TP
+.B \-clean
+If given with\fB \-kill\fP, then the logfile ~/.config/tigervnc/\fIhost\fP:\fIrfbport#\fP.log is also removed.
+.
+.TP
+.B \-list [ \fI:{display#,*}\fP | \fB\-display \fI:{display#,*}\fP ] [ \fB\-rfbport \fIrfbport#\fP ]
+This lists all running TigerVNC servers previously started with
+\fBx0tigervncserver\fP or \fBtigervncserver\fP. Stale entries are marked with
+(stale) in the output.
+.
+.TP
+.B \-cleanstale
+If given with \fB\-list\fP, then stale entries \(en resulting from missed
+cleanups of pidfiles in \fI~/.config/tigervnc\fP as well as stale X11 locks and sockets in
+/tmp due to \fBXtigervnc\fP or \fBX0tigervnc\fP server crashes \(en are cleaned
+up and not shown in the output of \fB-list\fP.
+.
+.SH FILES
+Several TigerVNC-related files are found in the \fI~/.config/tigervnc\fP directory:
+.TP
+.I ~/.config/tigervnc/passwd
+The TigerVNC password file for the security types \fIVncAuth\fP, \fITLSVnc\fP,
+and \fIX509Vnc\fP.
+.TP
+.I ~/.config/tigervnc/<host>:<display#>.log
+The log file for the VNC server.
+In case there is already a VNC server running for the display, either
+<host>:<display#>-<rfbport#>.log or <host>:<display#>-<rfbunixpath>.log will
+be used as a log file.
+.TP
+.I ~/.config/tigervnc/<host>:<display#>.pid
+Identifies the VNC server process ID, used by the\fB \-kill\fP option.
+In case there is already a VNC server running for the display, either
+<host>:<display#>-<rfbport#>.pid or <host>:<display#>-<rfbunixpath>.pid will
+be used as a pid file.
+.TP
+.I ~/.config/tigervnc/<host>-SrvCert.pem\fP and \fI<host>-SrvKey.pem
+The security types \fIX509None\fP, \fIX509Vnc\fP, and \fIX509Plain\fP need a
+certificate and the corresponding private key. If these are not provided via
+the \fB\-X509Cert\fP and\fB \-X509Key\fP command-line options or their
+corresponding configuration parameters in the configuration files
+\fI/etc/tigervnc/vncserver-config-defaults\fP, \fI~/.config/tigervnc/config.pl\fP, or
+\fI/etc/tigervnc/vncserver-config-mandatory\fP, then the \fBx0tigervncserver\fP
+wrapper script auto-generates a self-signed certificate for the
+\fB\-X509Cert\fP and\fB \-X509Key\fP options of the \fBX0tigervnc\fP server. The
+auto-generated self-signed certificate and its private key are stored in the
+above given two files. If the user wants their own certificate \(en instead
+of the on-demand auto-generated one \(en they can either specify it via the
+\fBx0tigervncserver\fP options \fB\-X509Cert\fP and\fB \-X509Key\fP or replace
+the files ~/.config/tigervnc/\fIhost\fP-SrvCert.pem and ~/.config/tigervnc/\fIhost\fP-SrvKe.pem.
+These files will not be overwritten once generated by the \fBx0tigervncserver\fP
+wrapper script.
+.TP
+.I ~/.config/tigervnc/<host>-SrvRsaKey.pem
+The \fIRSA-AES\fP security types (i.e., \fIRA2\fP, \fIRA2ne\fP, \fIRA2_256\fP,
+and \fIRA2ne_256\fP) need an RSA private key. If this key is not provided via
+the\fB \-RSAKey\fP command-line option or the corresponding parameter in
+the configuration files \fI/etc/tigervnc/vncserver-config-defaults\fP,
+\fI~/.config/tigervnc/config.pl\fP, or \fI/etc/tigervnc/vncserver-config-mandatory\fP,
+then the \fBx0tigervncserver\fP wrapper script auto-generates an RSA key for
+the\fB \-RSAKey\fP option of the \fBX0tigervnc\fP server. The auto-generated
+key is stored in the file ~/.config/tigervnc/\fIhost\fP-SrvRsaKey.pem.
+.TP
+.I ~/.config/tigervnc/config.pl
+The user configuration file for \fBx0tigervncserver\fP.
+To be compatible with the upstream provided wrapper scripts, we will
+fall back to trying to load configuration from \fI~/.config/tigervnc/config\fP if
+\fI~/.config/tigervnc/config.pl\fP is not present. Note that the \fIconfig\fP file uses
+\fBkey=value\fP lines as configuration syntax, while the \fIconfig.pl\fP and
+the \fIvncserver-config-*\fP files in the \fI/etc/tigervnc\fP directory use
+.BR perl (1)
+syntax.
+.PP
+Furthermore, there are global configuration files for \fBx0tigervncserver\fP in the \fI/etc/tigervnc\fP directory:
+.TP
+.I /etc/tigervnc/vncserver-config-defaults
+The global configuration file specifying the defaults for \fBx0tigervncserver\fP.
+.TP
+.I /etc/tigervnc/vncserver-config-mandatory
+If this file exists and defines options to be passed to \fBX0tigervnc\fP, they will
+override any of the same options defined in a user's \fIconfig.pl\fP file
+or ones given on the command line of this wrapper script. This file offers a
+mechanism to establish some basic form of system-wide policy.
+
+\fBWARNING! There is nothing stopping users from constructing their own wrapper
+script that calls X0tigervnc directly to bypass any options defined in the
+/etc/tigervnc/vncserver-config-mandatory configuration file.\fP
+.
+.SH SEE ALSO
+.BR tigervnc.conf (5x),
+.BR tigervncpasswd (1),
+.BR X0tigervnc (1),
+.BR xtigervncviewer (1),
+.BR tigervncserver (1)
+.br
+https://www.tigervnc.org/
+.
+.SH AUTHOR
+Joachim Falk, Constantin Kaplinsky and others.
+
+VNC was originally developed by the RealVNC team while at Olivetti
+Research Ltd / AT&T Laboratories Cambridge. TightVNC additions were
+implemented by Constantin Kaplinsky. Many other people have since
+participated in development, testing and support. This manual is part
+of the TigerVNC Debian packaging project.

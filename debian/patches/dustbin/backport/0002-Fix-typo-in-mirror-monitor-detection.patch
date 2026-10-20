@@ -1,0 +1,34 @@
+From 2daf4126882f82b6e392dfbae87205dbdc559c3d Mon Sep 17 00:00:00 2001
+From: Pierre Ossman <ossman@cendio.se>
+Date: Thu, 23 Dec 2021 15:58:00 +0100
+Subject: [PATCH] Fix typo in mirror monitor detection
+
+Bug introduced in fb561eb but still somehow passed manual testing.
+Resulted in some stray reads off the end of the stack, which were
+hopefully harmless.
+---
+ vncviewer/MonitorIndicesParameter.cxx | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+Index: pkg-tigervnc/vncviewer/MonitorIndicesParameter.cxx
+===================================================================
+--- pkg-tigervnc.orig/vncviewer/MonitorIndicesParameter.cxx
++++ pkg-tigervnc/vncviewer/MonitorIndicesParameter.cxx
+@@ -211,13 +211,13 @@ std::vector<MonitorIndicesParameter::Mon
+         // Only keep a single entry for mirrored screens
+         match = false;
+         for (int j = 0; j < ((int) monitors.size()); j++) {
+-            if (monitors[i].x != monitor.x)
++            if (monitors[j].x != monitor.x)
+                 continue;
+-            if (monitors[i].y != monitor.y)
++            if (monitors[j].y != monitor.y)
+                 continue;
+-            if (monitors[i].w != monitor.w)
++            if (monitors[j].w != monitor.w)
+                 continue;
+-            if (monitors[i].h != monitor.h)
++            if (monitors[j].h != monitor.h)
+                 continue;
+ 
+             match = true;

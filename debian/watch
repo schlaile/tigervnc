@@ -1,0 +1,8 @@
+Version: 5
+Source: https://github.com/TigerVNC/@PACKAGE@/tags
+Matching-Pattern: .*/archive/refs/tags/@ANY_VERSION@@ARCHIVE_EXT@
+Repack: yes
+Repack-Suffix: +dfsg
+Compression: xz
+Dversion-Mangle: s/\+dfsg$//
+Filename-Mangle: s/.*v([\d\.]+)\..*/@PACKAGE@_$1.orig.tar.gz/

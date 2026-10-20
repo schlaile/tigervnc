@@ -1,0 +1,21 @@
+Description: Remove obsolete syslog.target from tigervncserver@.service.
+  Some targets are obsolete by now, e.g. syslog.target or dbus.target. For
+  example, declaring After=syslog.target is unnecessary by now because syslog
+  is socket-activated and will therefore be started when needed. This patch
+  fixes the systemd-service-file-refers-to-obsolete-target lintian error.
+Author: Joachim Falk <joachim.falk@gmx.de>
+Forwarded: yes
+
+Index: pkg-tigervnc/unix/vncserver/vncserver@.service.in
+===================================================================
+--- pkg-tigervnc.orig/unix/vncserver/vncserver@.service.in
++++ pkg-tigervnc/unix/vncserver/vncserver@.service.in
+@@ -31,7 +31,7 @@
+ 
+ [Unit]
+ Description=Remote desktop service (VNC)
+-After=syslog.target network.target systemd-user-sessions.service
++After=network.target systemd-user-sessions.service
+ 
+ [Service]
+ Type=forking

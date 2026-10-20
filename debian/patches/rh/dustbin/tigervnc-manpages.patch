@@ -1,0 +1,19 @@
+Description: Add help output for options -display and -geometry."
+Author: <unknown>
+
+Index: pkg-tigervnc/vncviewer/vncviewer.cxx
+===================================================================
+--- pkg-tigervnc.orig/vncviewer/vncviewer.cxx
++++ pkg-tigervnc/vncviewer/vncviewer.cxx
+@@ -505,6 +505,11 @@ static void usage(const char *programNam
+ #endif
+ 
+   fprintf(stderr,"\n"
++	  "Options:\n\n"
++	  "  -display Xdisplay - Specifies the X display for the viewer window\n"
++	  "  -geometry geometry - Standard X position and sizing specification.\n");
++
++  fprintf(stderr,"\n"
+           "Parameters can be turned on with -<param> or off with -<param>=0\n"
+           "Parameters which take a value can be specified as "
+           "-<param> <value>\n"

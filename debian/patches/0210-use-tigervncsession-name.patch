@@ -1,0 +1,174 @@
+Description: We install all scripts and programs of TigerVNC with a tiger prefix.
+ Hence, we have to adapt some programs to take this into account.
+Author: Joachim Falk <joachim.falk@gmx.de>
+Forwarded: not-needed
+
+--- a/unix/vncserver/vncsession.c
++++ b/unix/vncserver/vncsession.c
+@@ -522,7 +522,7 @@
+ {
+     struct passwd *pwent;
+     pid_t pid;
+-    const char *child_argv[3];
++    const char *child_argv[4];
+ 
+     pwent = getpwnam(username);
+     if (pwent == NULL) {
+@@ -579,9 +579,10 @@
+     setenv("USER", pwent->pw_name, 1);
+     setenv("USERNAME", pwent->pw_name, 1);
+ 
+-    child_argv[0] = CMAKE_INSTALL_FULL_LIBEXECDIR "/vncserver";
+-    child_argv[1] = display;
+-    child_argv[2] = NULL;
++    child_argv[0] = CMAKE_INSTALL_FULL_BINDIR "/tigervncserver";
++    child_argv[1] = "-fg";
++    child_argv[2] = display;
++    child_argv[3] = NULL;
+ 
+     closelog();
+ 
+@@ -647,7 +648,7 @@
+             return EX_OSERR;
+     }
+ 
+-    openlog("vncsession", LOG_PID, LOG_AUTH);
++    openlog("tigervncsession", LOG_PID, LOG_AUTH);
+ 
+     /* Indicate that this is a graphical user session. We need to do
+        this here before PAM as pam_systemd.so looks at these. */
+@@ -680,13 +681,13 @@
+ 
+     script = run_script(username, display, child_env);
+     if (script == -1) {
+-        syslog(LOG_CRIT, "Failure starting vncserver script");
++        syslog(LOG_CRIT, "Failure starting tigervncserver script");
+         stop_pam(pamh, pamret);
+         return EX_OSERR;
+     }
+ 
+     snprintf(pid_file, sizeof(pid_file),
+-             "/run/vncsession-%s.pid", display);
++             "/run/tigervncsession-%s.pid", display);
+     f = fopen(pid_file, "w");
+     if (f == NULL) {
+         syslog(LOG_ERR, "Failure creating pid file \"%s\": %s",
+@@ -712,14 +713,14 @@
+         if (WIFEXITED(status)) {
+             if (WEXITSTATUS(status) != 0) {
+                 syslog(LOG_WARNING,
+-                        "vncsession: vncserver exited with status=%d",
++                        "tigervncsession: tigervncserver exited with status=%d",
+                         WEXITSTATUS(status));
+             }
+             break;
+         }
+         else if (WIFSIGNALED(status)) {
+             syslog(LOG_WARNING,
+-                    "vncsession: vncserver was terminated by signal %d",
++                    "tigervncsession: tigervncserver was terminated by signal %d",
+                     WTERMSIG(status));
+             break;
+         }
+--- a/unix/vncserver/vncserver@.service.in
++++ b/unix/vncserver/vncserver@.service.in
+@@ -1,11 +1,11 @@
+-# The vncserver service unit file
++# The tigervncserver service unit file
+ #
+ # Quick HowTo:
+ # 1. Add a user mapping to @CMAKE_INSTALL_FULL_SYSCONFDIR@/tigervnc/vncserver.users.
+ # 2. Adjust the global or user configuration. See the
+-#    vncsession(8) manpage for details. (OPTIONAL)
+-# 3. Run `systemctl enable vncserver@:<display>.service`
+-# 4. Run `systemctl start vncserver@:<display>.service`
++#    tigervncsession(8) manpage for details. (OPTIONAL)
++# 3. Run `systemctl enable tigervncserver@:<display>.service`
++# 4. Run `systemctl start tigervncserver@:<display>.service`
+ #
+ # DO NOT RUN THIS SERVICE if your local area network is
+ # untrusted!  For a secure way of using VNC, you should
+@@ -35,8 +35,8 @@
+ 
+ [Service]
+ Type=forking
+-ExecStart=@CMAKE_INSTALL_FULL_LIBEXECDIR@/vncsession-start %i
+-PIDFile=/run/vncsession-%i.pid
++ExecStart=@CMAKE_INSTALL_FULL_LIBEXECDIR@/tigervncsession-start %i
++PIDFile=/run/tigervncsession-%i.pid
+ SELinuxContext=system_u:system_r:vnc_session_t:s0
+ 
+ [Install]
+--- a/unix/vncserver/vncsession-start.in
++++ b/unix/vncserver/vncsession-start.in
+@@ -40,4 +40,4 @@
+ 	exit 1
+ fi
+ 
+-exec "@CMAKE_INSTALL_FULL_SBINDIR@/vncsession" "${USER}" "${DISPLAY}"
++exec "@CMAKE_INSTALL_FULL_SBINDIR@/tigervncsession" "${USER}" "${DISPLAY}"
+--- a/unix/vncserver/vncsession.man.in
++++ b/unix/vncserver/vncsession.man.in
+@@ -30,42 +30,46 @@
+ Several VNC-related files are found in the directory \fI$HOME/.config/tigervnc\fP:
+ .TP
+ \fI@CMAKE_INSTALL_FULL_SYSCONFDIR@/tigervnc/vncserver-config-defaults\fP
+-The optional system-wide equivalent of \fI$HOME/.config/tigervnc/config\fP.
++The optional system-wide equivalent of \fI$HOME/.config/tigervnc/config.pl\fP.
+ If this file exists and defines options to be passed to Xvnc, they will be used
+-as defaults for users. The user's \fI$HOME/.config/tigervnc/config\fP overrides
++as defaults for users. The user's \fI$HOME/.config/tigervnc/config.pl\fP overrides
+ settings configured in this file. The overall configuration file load order is:
+-this file, \fI$HOME/.config/tigervnc/config\fP, and then
++this file, \fI$HOME/.config/tigervnc/config.pl\fP, and then
+ \fI@CMAKE_INSTALL_FULL_SYSCONFDIR@/tigervnc/vncserver-config-mandatory\fP.
+ None are required to exist.
+ .TP
+ \fI@CMAKE_INSTALL_FULL_SYSCONFDIR@/tigervnc/vncserver-config-mandatory\fP
+-The optional system-wide equivalent of \fI$HOME/.config/tigervnc/config\fP.
++The optional system-wide equivalent of \fI$HOME/.config/tigervnc/config.pl\fP.
+ If this file exists and defines options to be passed to Xvnc, they will override
+-any of the same options defined in a user's \fI$HOME/.config/tigervnc/config\fP.
++any of the same options defined in a user's \fI$HOME/.config/tigervnc/config.pl\fP.
+ This file offers a mechanism to establish some basic form of system-wide policy.
+ WARNING! There is nothing stopping users from constructing their own
+ vncsession-like script that calls Xvnc directly to bypass any options defined in
+ \fI@CMAKE_INSTALL_FULL_SYSCONFDIR@/tigervnc/vncserver-config-mandatory\fP. The
+ overall configuration file load order is:
+ \fI@CMAKE_INSTALL_FULL_SYSCONFDIR@/tigervnc/vncserver-config-defaults\fP,
+-\fI$HOME/.config/tigervnc/config\fP, and then this file. None are required to
++\fI$HOME/.config/tigervnc/config.pl\fP, and then this file. None are required to
+ exist.
+ .TP
+-\fI$XDG_CONFIG_HOME/tigervnc/config\fP
++\fI$XDG_CONFIG_HOME/tigervnc/config.pl\fP
+ .TQ
+-\fI$HOME/.config/tigervnc/config\fP
++\fI$HOME/.config/tigervnc/config.pl\fP
+ An optional server config file wherein options to be passed to Xvnc are listed
+-to avoid hard-coding them to the physical invocation. List options in this file
++to avoid hard-coding them to the physical invocation. This file uses
++.BR perl (1)
++syntax. The special option
++.B session
++can be used to control which session type will be started. This should match
++one of the files in \fI/usr/share/xsessions\fP. E.g., if there is a file called
++\fIgnome.desktop\fP, then \fC$session="gnome";\fP would use that session type.
++
++To be compatible with the upstream provided wrapper scripts, we will fall back
++to trying to load configuration from \fI$HOME/.config/tigervnc/config\fP if
++\fIconfig.pl\fP is not present. The \fIconfig\fP file lists options
+ one per line. For those requiring an argument, simply separate the option from
+ the argument with an equal sign, for example: "geometry=2000x1200" or
+-"securitytypes=vncauth,tlsvnc". Options without an argument are simply listed
++"securitytypes=VncAuth,TLSVnc". Options without an argument are simply listed
+ as a single word, for example: "localhost" or "alwaysshared".
+-
+-The special option
+-.B session
+-can be used to control which session type will be started. This should match
+-one of the files in \fI/usr/share/xsessions\fP. E.g. if there is a file called
+-"gnome.desktop", then "session=gnome" would be set to use that session type.
+ .TP
+ \fI$XDG_CONFIG_HOME/tigervnc/passwd\fP
+ .TQ

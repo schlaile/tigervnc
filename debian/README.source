@@ -1,0 +1,4 @@
+The original source archive contains *win* directory in which somefile have no
+explicit license statement, for it is not used in linux/unix, remove it for
+DFSG-compatible
+
