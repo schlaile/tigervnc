@@ -80,8 +80,11 @@ private:
   void dropJob(int x, int y, std::vector<std::string> paths,
                std::vector<std::string> links,
                FileDropURL base, std::string token);
+  // fallback: the way through the endpoint when url cannot be reached
+  // (or nullptr)
   bool upload(const File& file, const FileDropURL& url,
-              const std::string& token, std::string* error);
+              const std::string& token, const FileDropURL* fallback,
+              const std::string& fallbackToken, std::string* error);
   // false when stopping or, for gen != 0, when the endpoint changed
   bool sleepFor(int seconds, uint64_t gen = 0);
 

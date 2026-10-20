@@ -22,8 +22,13 @@
 
 #ifdef WIN32
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #else
 #include <sys/socket.h>
+#include <sys/select.h>
+#include <netdb.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <errno.h>
 #endif
 
@@ -175,6 +180,64 @@ void FileDropHttp::abort()
   aborted = true;
   if (sock)
     shutdownSocket(sock);
+}
+
+bool FileDropHttp::reachable(const FileDropURL& url, int seconds)
+{
+  struct addrinfo hints, *res = nullptr;
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  std::string port = std::to_string(url.port);
+  if (getaddrinfo(url.host.c_str(), port.c_str(), &hints, &res) != 0)
+    return false;
+
+  bool ok = false;
+  for (struct addrinfo* ai = res; ai && !ok; ai = ai->ai_next) {
+#ifdef WIN32
+    SOCKET s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (s == INVALID_SOCKET)
+      continue;
+    u_long nonblocking = 1;
+    ioctlsocket(s, FIONBIO, &nonblocking);
+    int r = ::connect(s, ai->ai_addr, (int)ai->ai_addrlen);
+    bool pending = r != 0 && WSAGetLastError() == WSAEWOULDBLOCK;
+#else
+    int s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (s < 0)
+      continue;
+    fcntl(s, F_SETFL, fcntl(s, F_GETFL) | O_NONBLOCK);
+    int r = ::connect(s, ai->ai_addr, ai->ai_addrlen);
+    bool pending = r != 0 && errno == EINPROGRESS;
+#endif
+    if (r == 0) {
+      ok = true;
+    } else if (pending) {
+      fd_set wfds, efds;
+      FD_ZERO(&wfds);
+      FD_ZERO(&efds);
+      FD_SET(s, &wfds);
+      FD_SET(s, &efds);
+      struct timeval tv;
+      tv.tv_sec = seconds;
+      tv.tv_usec = 0;
+      if (select((int)s + 1, nullptr, &wfds, &efds, &tv) > 0 &&
+          FD_ISSET(s, &wfds)) {
+        int err = 0;
+        socklen_t len = sizeof(err);
+        if (getsockopt(s, SOL_SOCKET, SO_ERROR, (char*)&err, &len) == 0 &&
+            err == 0)
+          ok = true;
+      }
+    }
+#ifdef WIN32
+    closesocket(s);
+#else
+    close(s);
+#endif
+  }
+  freeaddrinfo(res);
+  return ok;
 }
 
 void FileDropHttp::connect(const FileDropURL& url)
