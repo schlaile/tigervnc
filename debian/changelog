@@ -1,3 +1,10 @@
+tigervnc-wws (1.16.80+wws2-3) unstable; urgency=medium
+
+  * Build with the Nettle 3.3 of stretch (base64_decode_update takes
+    uint8_t there).
+
+ -- Peter Schlaile <peter@schlaile.de>  Tue, 20 Oct 2026 19:42:58 +0200
+
 tigervnc-wws (1.16.80+wws2-2) unstable; urgency=medium
 
   * Build on Debian stretch too: debhelper compatibility 10, pkg-config,

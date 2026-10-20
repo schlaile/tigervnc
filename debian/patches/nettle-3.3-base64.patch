@@ -1,0 +1,20 @@
+Description: build with Nettle 3.3 (stretch), whose base64_decode_update takes uint8_t
+Forwarded: not-needed
+
+--- a/common/rfb/SSecurityRSAAES.cxx
++++ b/common/rfb/SSecurityRSAAES.cxx
+@@ -169,8 +169,14 @@ static bool loadPEM(uint8_t* data, size_
+   struct base64_decode_ctx ctx;
+   size_t derSize;
+   base64_decode_init(&ctx);
++#if NETTLE_VERSION_MAJOR == 3 && NETTLE_VERSION_MINOR < 4
++  // Nettle before 3.4 takes the base64 text as uint8_t
++  if (!base64_decode_update(&ctx, &derSize, der->data(),
++                            base64Size, (const uint8_t*)derBase64))
++#else
+   if (!base64_decode_update(&ctx, &derSize, der->data(),
+                             base64Size, derBase64))
++#endif
+     return false;
+   if (!base64_decode_final(&ctx))
+     return false;
