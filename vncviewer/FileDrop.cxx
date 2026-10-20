@@ -74,8 +74,8 @@ static int seekFile(FILE* f, int64_t offset)
 
 static const size_t chunkSize = 4 * 1024 * 1024;
 static const int maxAttempts = 5;
-// how long the direct way to an upload URL elsewhere may take to answer
-// before the fallback through the endpoint is used
+// how long a way to an upload may take to answer before the next one
+// (upload.fallbacks) is tried
 static const int fallbackProbeSeconds = 5;
 
 
@@ -715,17 +715,17 @@ void FileDrop::dropJob(int x, int y, std::vector<std::string> paths,
     std::string error;
     try {
       FileDropURL url = endpoint.resolve(r["upload"]["url"].string);
-      // a way through the endpoint, which we reach, for an upload URL
-      // elsewhere that we might not
-      bool hasFallback = !r["upload"]["fallback"]["url"].string.empty();
-      FileDropURL fallback;
-      if (hasFallback)
-        fallback = endpoint.resolve(r["upload"]["fallback"]["url"].string);
+      // other ways to an upload URL elsewhere that we might not reach
+      // (through a CDN, through the endpoint), in the order to try
+      std::vector<Way> fallbacks;
+      for (const JValue& fb : r["upload"]["fallbacks"].array)
+        if (!fb["url"].string.empty())
+          fallbacks.push_back(Way(endpoint.resolve(fb["url"].string),
+                                  fb["token"].string));
       message(core::format(_("Uploading \"%s\"..."),
                            files[i].name.c_str()), false);
-      if (upload(files[i], url, r["upload"]["token"].string,
-                 hasFallback ? &fallback : nullptr,
-                 r["upload"]["fallback"]["token"].string, &error))
+      if (upload(files[i], url, r["upload"]["token"].string, fallbacks,
+                 &error))
         message(core::format(_("\"%s\" uploaded"), files[i].name.c_str()),
                 false);
       else if (!stopping)
@@ -741,12 +741,13 @@ void FileDrop::dropJob(int x, int y, std::vector<std::string> paths,
 // tus 1.0.0 core protocol: HEAD for the offset, PATCH from there
 bool FileDrop::upload(const File& file, const FileDropURL& directUrl,
                       const std::string& uploadToken,
-                      const FileDropURL* fallback,
-                      const std::string& fallbackToken, std::string* error)
+                      const std::vector<Way>& fallbacks, std::string* error)
 {
+  std::vector<Way> ways(1, Way(directUrl, uploadToken));
+  ways.insert(ways.end(), fallbacks.begin(), fallbacks.end());
+  size_t way = 0;
   FileDropURL url = directUrl;
   std::map<std::string, std::string> headers;
-  bool relayed = false;
 
   // an URL on a media server may carry its own authorisation
   auto useToken = [&headers](const std::string& value) {
@@ -755,23 +756,36 @@ bool FileDrop::upload(const File& file, const FileDropURL& directUrl,
     if (!value.empty())
       headers["Authorization"] = "Bearer " + value;
   };
-  // the way through the endpoint, for good (the same upload: the offset
-  // stays)
+  // the next way from "from" on that answers (the last one without a
+  // probe: there is nothing after it); never back, the offset stays
+  auto useWay = [&](size_t from) {
+    way = from;
+    while (way + 1 < ways.size() &&
+           !FileDropHttp::reachable(ways[way].first, fallbackProbeSeconds)) {
+      vlog.info(_("Upload of \"%s\": %s cannot be reached, going on "
+                  "through %s"), file.name.c_str(),
+                ways[way].first.host.c_str(), ways[way + 1].first.host.c_str());
+      way++;
+    }
+    url = ways[way].first;
+    useToken(ways[way].second);
+  };
+  // the next way after a failure, false if there is none
   auto useFallback = [&]() -> bool {
-    if (!fallback || relayed)
+    if (way + 1 >= ways.size())
       return false;
-    vlog.info(_("Upload of \"%s\": %s cannot be reached, going through "
-                "the desktop"), file.name.c_str(), directUrl.host.c_str());
-    url = *fallback;
-    useToken(fallbackToken);
-    relayed = true;
+    vlog.info(_("Upload of \"%s\": %s cannot be reached, going on "
+                "through %s"), file.name.c_str(), ways[way].first.host.c_str(),
+              ways[way + 1].first.host.c_str());
+    useWay(way + 1);
     return true;
   };
 
-  useToken(uploadToken);
   // a firewall that drops packets would hold every attempt for minutes
-  if (fallback && !FileDropHttp::reachable(directUrl, fallbackProbeSeconds))
-    useFallback();
+  if (ways.size() > 1)
+    useWay(0);
+  else
+    useToken(uploadToken);
 
   FILE* f = openFile(file.path);
   if (!f) {
