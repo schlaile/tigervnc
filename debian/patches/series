@@ -8,7 +8,7 @@
 0210-use-tigervncsession-name.patch
 0230-cache-PasswordFile.patch
 # dustbin/0300-xorg-0121.patch
-update-upstream-patch-to-ltmain.sh.patch
+# update-upstream-patch-to-ltmain.sh.patch # for libtool 2.5 (trixie); bookworm has 2.4.7
 
 # Backported fixes from upstream
 # dustbin/backport/0001-Fix-formatting-of-rfbport-in-man-pages.patch
