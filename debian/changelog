@@ -1,3 +1,12 @@
+tigervnc (1.7.0+dfsg-7+deb9u2+wws5) stretch; urgency=medium
+
+  * vncconfig answers UTF8_STRING, COMPOUND_TEXT and TEXT as well as STRING
+    and lists them under TARGETS (wws-vncconfig-text-targets.patch).  With
+    STRING alone pasting from the viewer failed in GTK 3/WebKit (the WWS
+    HTML editor) and in fields asking COMPOUND_TEXT and UTF8_STRING only.
+
+ -- Peter Schlaile <peter@schlaile.de>  Wed, 21 Oct 2026 14:30:00 +0200
+
 tigervnc (1.7.0+dfsg-7+deb9u2+wws4) stretch; urgency=medium
 
   * Take over 1.7.0+dfsg-7+deb9u2 (stretch-security, CVE-2020-26117: TLS
