@@ -122,14 +122,15 @@ Flags:
 | Bit | Name | Meaning |
 |---|---|---|
 | 0 | `SameHost` | Replace the host in the URL with the host the client used for this RFB connection. |
+| 1 | `Tunnel` | The server carries connections to the endpoint through RFB (see [Tunnel through RFB](#tunnel-through-rfb)). |
 
 Why `SameHost`: on the desktop side, the server name the clients use is often
 not known (VPN, NAT, several names). With `SameHost`, the desktop announces
 for example `https://localhost:5560/desktop/`, and a client that reached the
 server as `kasse3.example` uses `https://kasse3.example:5560/desktop/`.
 If the RFB connection itself is tunnelled (for example over SSH to
-`localhost`), the side channel is not reachable this way; the client then
-reports drops as failed.
+`localhost`), the side channel is not reachable this way; with `Tunnel`
+the client reaches it through RFB, otherwise it reports drops as failed.
 
 The service name lets other side-channel services use the same encoding later.
 A server sends one rectangle per service. Clients ignore services they do not
@@ -304,6 +305,74 @@ Clients ignore events they do not know. When the stream breaks, they open it
 again with a growing delay. `401` means that the token is no longer valid:
 the client stops until the next announcement.
 
+## Tunnel through RFB
+
+Status: draft, not implemented yet.
+
+A side channel needs a second way to the desktop's host. Where only the
+RFB connection gets through (an SSH port forward, a firewall that opens
+one port, a jump host), a server with the `Tunnel` flag carries the
+client's connections to the endpoint inside RFB. HTTP stays exactly as
+above, end to end between client and endpoint; RFB only carries the bytes.
+
+- **Only the announced endpoint.** The server connects every tunnel
+  channel to the host and port of the endpoint URL it announced (as
+  written, before `SameHost`), never anywhere else. The client cannot name
+  a target, so the tunnel is no way into the desktop's network.
+- **What goes through.** Requests to the endpoint's origin: offers, links,
+  `events`, and uploads whose URL has that origin (a receiver relaying an
+  upload itself, see `upload.fallbacks`). Uploads to other hosts take their
+  own ways as before; over an SSH forward the client usually still reaches
+  a public relay of the media server on the Internet, so the bulk of the
+  bytes need not pass through RFB.
+- **When.** The client probes the endpoint as it probes upload ways (a
+  connection within a few seconds). If that fails and the server has set
+  `Tunnel`, it uses the tunnel for this endpoint until the next
+  announcement. A client may prefer the tunnel at once when it reached the
+  server on a loopback address.
+- **TLS.** An `https` endpoint is spoken to with TLS inside the channel,
+  verified against the host name of the URL. The server sees only
+  ciphertext.
+
+### Messages
+
+One client message and one server message, both with the same framing:
+
+| Bytes | Type | Description |
+|---|---|---|
+| 1 | U8 | message type `EndpointTunnel` |
+| 1 | U8 | *subtype* |
+| 2 | U16 | *channel* |
+| 4 | U32 | *length* of the payload |
+| *length* | U8 array | payload |
+
+| Subtype | Direction | Name | Payload |
+|---|---|---|---|
+| 0 | C→S | `Open` | U16 service-length, service name (`file-drop`) |
+| 1 | S→C | `OpenResult` | U8 status: 0 connected, 1 refused (no tunnel for this service or client), 2 not reachable, 3 too many channels |
+| 2 | both | `Data` | bytes, at most 4096 |
+| 3 | both | `Credit` | U32 additional bytes the sender may send on *channel* |
+| 4 | both | `Close` | U8 reason: 0 normal, 1 error |
+
+The client picks a free channel number for `Open`; a status other than 0
+ends the channel. A channel is one TCP connection to the endpoint, closed
+when either side sends `Close`. Each side may send 65536 bytes per channel
+before it waits for `Credit`; the receiver returns credit as it passes bytes
+on. Receivers skip subtypes they do not know.
+
+The flow control and the size bound keep framebuffer updates and input
+ahead: a server sends `Data` only when its output to the client is
+drained, and a client likewise. Servers bound the open channels per client
+(for example 8).
+
+The tunnel is offered per announced service, so later side-channel services
+use it the same way. View-only clients get no tunnel. A server parameter
+turns it off.
+
+Until numbers are assigned the implementation uses the private message type
+201 in both directions. The framing follows that of VNC Device Link, so
+implementations can share the channel handling.
+
 ## Security
 
 - **Token.** The token is only as secret as the RFB connection that carries
@@ -322,6 +391,9 @@ the client stops until the next announcement.
 - **Opening documents.** A desktop could try to make the client open
   something harmful. Hence: only `http(s)`, the user's consent, and only the
   system's default handler.
+- **Tunnel.** It reaches only the announced endpoint, which still checks
+  the token; the endpoint must not trust a connection because it comes
+  from the server's own host.
 - **Old clients and servers.** Without the pseudo-encoding nothing changes:
   old clients get no announcement, and new clients see no endpoint at old
   servers.
@@ -334,6 +406,8 @@ the client stops until the next announcement.
 - A drop of anything else (plain text, a file that cannot be read) is
   refused as a whole.
 - Directories are not offered (version 1).
+- Over the tunnel the viewer behaves as on a direct connection; the
+  progress shows that the tunnel is used, since it is slower.
 - A setting turns the feature off. Another one controls `open`: ask every
   time, ask once per endpoint, or never open.
 
