@@ -51,6 +51,11 @@ public:
   FileDrop* getFileDrop() { return fileDrop; }
   void fileDropMessage(const char* text, bool error);
 
+  // For tunnels through RFB: whether output to the server is still
+  // waiting, and pushing it on
+  bool outputPending();
+  void flushOutput();
+
   // Device links (doc/device-link.md)
   const char* getServerName() { return serverName.c_str(); }
   bool isSecure();
@@ -83,6 +88,8 @@ protected:
 
   void setName(const char* name) override;
   void setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint) override;
+  void endpointTunnel(uint8_t subtype, uint16_t channel,
+                      const uint8_t* data, size_t len) override;
   void handleDeviceLink(uint8_t subtype, uint16_t channel,
                         const uint8_t* data, size_t len) override;
 

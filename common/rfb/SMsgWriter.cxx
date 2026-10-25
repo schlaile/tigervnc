@@ -215,6 +215,22 @@ void SMsgWriter::writeClipboardProvide(uint32_t flags,
   endMsg();
 }
 
+void SMsgWriter::writeEndpointTunnel(uint8_t subtype, uint16_t channel,
+                                     const uint8_t* data, size_t len)
+{
+  if (len > (subtype == endpointTunnelData ? endpointTunnelMaxData
+                                           : endpointTunnelMaxPayload))
+    throw std::out_of_range("Too large endpoint tunnel message");
+
+  startMsg(msgTypeServerEndpointTunnel);
+  os->writeU8(subtype);
+  os->writeU16(channel);
+  os->writeU32(len);
+  if (len > 0)
+    os->writeBytes(data, len);
+  endMsg();
+}
+
 void SMsgWriter::writeFence(uint32_t flags, unsigned len,
                             const uint8_t data[])
 {

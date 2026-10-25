@@ -33,6 +33,7 @@
 #include <rdr/InStream.h>
 #include <rdr/ZlibInStream.h>
 
+#include <rfb/DesktopEndpoint.h>
 #include <rfb/msgTypes.h>
 #include <rfb/qemuTypes.h>
 #include <rfb/clipboardTypes.h>
@@ -100,6 +101,9 @@ bool SMsgReader::readMsg()
     break;
   case msgTypeClientFence:
     ret = readFence();
+    break;
+  case msgTypeClientEndpointTunnel:
+    ret = readEndpointTunnel();
     break;
   case msgTypeKeyEvent:
     ret = readKeyEvent();
@@ -297,6 +301,39 @@ bool SMsgReader::readDeviceLink()
     is->readBytes(data.data(), len);
 
   handler->handleDeviceLink(subtype, channel, data.data(), len);
+
+  return true;
+}
+
+bool SMsgReader::readEndpointTunnel()
+{
+  uint8_t subtype;
+  uint16_t channel;
+  uint32_t len;
+  std::vector<uint8_t> data;
+
+  if (!is->hasData(1 + 2 + 4))
+    return false;
+
+  is->setRestorePoint();
+
+  subtype = is->readU8();
+  channel = is->readU16();
+  len = is->readU32();
+
+  if (len > (subtype == endpointTunnelData ? endpointTunnelMaxData
+                                           : endpointTunnelMaxPayload))
+    throw protocol_error(_("Too large endpoint tunnel message"));
+
+  if (!is->hasDataOrRestore(len))
+    return false;
+  is->clearRestorePoint();
+
+  data.resize(len);
+  if (len > 0)
+    is->readBytes(data.data(), len);
+
+  handler->endpointTunnel(subtype, channel, data.data(), len);
 
   return true;
 }

@@ -342,6 +342,9 @@ void XserverDesktop::handleSocketEvent(int fd, bool read, bool write)
     if (handleSocketReadWrite(fd, read, write))
       return;
 
+    if (server->processTunnelEvent(fd, read, write))
+      return;
+
     vlog.error(_("Cannot find file descriptor for socket event"));
   } catch (std::exception& e) {
     vlog.error("XserverDesktop::handleSocketEvent: %s",e.what());
@@ -444,6 +447,19 @@ void XserverDesktop::blockHandler(int* timeout)
       /* Update existing NotifyFD to listen for write (or not) */
       vncSetNotifyFd(fd, screenIndex, true, (*i)->outStream().hasBufferedData());
     }
+
+    // Tunnels to side-channel endpoints: what to watch changes with the
+    // flow control
+    std::list<int> closedTunnels;
+    server->takeClosedTunnelFds(&closedTunnels);
+    for (int fd : closedTunnels) {
+      vncRemoveNotifyFd(fd);
+      ::close(fd);
+    }
+    std::list<rfb::EndpointTunnel::Fd> tunnels;
+    server->getTunnelFds(&tunnels);
+    for (const rfb::EndpointTunnel::Fd& t : tunnels)
+      vncSetNotifyFd(t.fd, screenIndex, t.read, t.write);
 
     // We are responsible for propagating mouse movement between clients
     int cursorX, cursorY;
