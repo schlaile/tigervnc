@@ -477,6 +477,32 @@ void VNCServerST::setDesktopEndpoint(const DesktopEndpoint& endpoint)
     (*ci)->setDesktopEndpointOrClose(endpoint);
 }
 
+void VNCServerST::getTunnelFds(std::list<EndpointTunnel::Fd>* fds)
+{
+  fds->clear();
+  for (VNCSConnectionST* client : clients)
+    client->getTunnelFds(fds);
+}
+
+bool VNCServerST::processTunnelEvent(int fd, bool read, bool write)
+{
+  // ended in this round already, the desktop drops it before the next
+  for (int closed : closedTunnelFds) {
+    if (closed == fd)
+      return true;
+  }
+  for (VNCSConnectionST* client : clients) {
+    if (client->processTunnelEventOrClose(fd, read, write))
+      return true;
+  }
+  return false;
+}
+
+void VNCServerST::takeClosedTunnelFds(std::list<int>* fds)
+{
+  fds->splice(fds->end(), closedTunnelFds);
+}
+
 void VNCServerST::add_changed(const core::Region& region)
 {
   if (comparer == nullptr)

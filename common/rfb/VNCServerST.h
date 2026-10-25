@@ -105,6 +105,9 @@ namespace rfb {
     void setCursorPos(const core::Point& p, bool warped) override;
     void setName(const char* name_) override;
     void setDesktopEndpoint(const DesktopEndpoint& endpoint) override;
+    void getTunnelFds(std::list<EndpointTunnel::Fd>* fds) override;
+    bool processTunnelEvent(int fd, bool read, bool write) override;
+    void takeClosedTunnelFds(std::list<int>* fds) override;
     void setLEDState(unsigned state) override;
 
     void bell() override;
@@ -119,6 +122,7 @@ namespace rfb {
     const char* getName() const { return name.c_str(); }
     const std::list<DesktopEndpoint>& getDesktopEndpoints() const
       { return desktopEndpoints; }
+    std::list<int>* getClosedTunnelFds() { return &closedTunnelFds; }
     unsigned getLEDState() const { return ledState; }
     bool isDesktopReady() const { return desktopStarted; }
 
@@ -195,6 +199,8 @@ namespace rfb {
 
     std::string name;
     std::list<DesktopEndpoint> desktopEndpoints;
+    // descriptors of ended tunnel channels, for the desktop
+    std::list<int> closedTunnelFds;
 
     std::list<VNCSConnectionST*> clients;
     VNCSConnectionST* pointerClient;

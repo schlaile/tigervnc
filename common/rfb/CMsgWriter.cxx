@@ -31,6 +31,7 @@
 #include <rdr/MemOutStream.h>
 #include <rdr/ZlibOutStream.h>
 
+#include <rfb/DesktopEndpoint.h>
 #include <rfb/msgTypes.h>
 #include <rfb/fenceTypes.h>
 #include <rfb/qemuTypes.h>
@@ -150,6 +151,22 @@ void CMsgWriter::writeFence(uint32_t flags, unsigned len, const uint8_t data[])
   os->writeU8(len);
   os->writeBytes(data, len);
 
+  endMsg();
+}
+
+void CMsgWriter::writeEndpointTunnel(uint8_t subtype, uint16_t channel,
+                                     const uint8_t* data, size_t len)
+{
+  if (len > (subtype == endpointTunnelData ? endpointTunnelMaxData
+                                           : endpointTunnelMaxPayload))
+    throw std::out_of_range("Too large endpoint tunnel message");
+
+  startMsg(msgTypeClientEndpointTunnel);
+  os->writeU8(subtype);
+  os->writeU16(channel);
+  os->writeU32(len);
+  if (len > 0)
+    os->writeBytes(data, len);
   endMsg();
 }
 

@@ -58,6 +58,11 @@ namespace rfb {
 
     virtual void clientCutText(const char* str) = 0;
 
+    // An EndpointTunnel message (doc/file-drop.md); servers without
+    // tunnels never set the Tunnel flag, so clients do not send them
+    virtual void endpointTunnel(uint8_t /*subtype*/, uint16_t /*channel*/,
+                                const uint8_t* /*data*/, size_t /*len*/) {}
+
     virtual void handleClipboardCaps(uint32_t flags,
                                      const uint32_t* lengths) = 0;
     virtual void handleClipboardRequest(uint32_t flags) = 0;

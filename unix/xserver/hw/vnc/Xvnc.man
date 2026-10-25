@@ -46,6 +46,13 @@ replace the host of the URL with the host they used to connect. An empty value
 withdraws the endpoint. Default is empty.
 .
 .TP
+.B \-FileDropTunnel
+Carry connections of viewers to the \fBFileDropEndpoint\fP through the VNC
+connection, for viewers that cannot reach it directly (a VNC connection over an
+SSH port forward, for example). The server connects only to the host and port
+of the endpoint URL. Default is on.
+.
+.TP
 .B \-geometry \fIwidth\fPx\fIheight\fP
 Specify the size of the desktop to be created. Default is 1024x768.
 .

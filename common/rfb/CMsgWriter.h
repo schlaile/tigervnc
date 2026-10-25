@@ -56,6 +56,10 @@ namespace rfb {
     void writeEnableContinuousUpdates(bool enable, int x, int y, int w, int h);
 
     void writeFence(uint32_t flags, unsigned len, const uint8_t data[]);
+    // writeEndpointTunnel() sends a message for a tunnel channel to the
+    // endpoint of a side-channel service (doc/file-drop.md)
+    void writeEndpointTunnel(uint8_t subtype, uint16_t channel,
+                             const uint8_t* data, size_t len);
 
     void writeKeyEvent(uint32_t keysym, uint32_t keycode, bool down);
     void writePointerEvent(const core::Point& pos, uint16_t buttonMask);

@@ -307,7 +307,7 @@ the client stops until the next announcement.
 
 ## Tunnel through RFB
 
-Status: draft, not implemented yet.
+Status: draft, implemented in the TigerVNC fork (Xvnc, vncviewer).
 
 A side channel needs a second way to the desktop's host. Where only the
 RFB connection gets through (an SSH port forward, a firewall that opens
@@ -355,8 +355,11 @@ One client message and one server message, both with the same framing:
 | 4 | both | `Close` | U8 reason: 0 normal, 1 error |
 
 The client picks a free channel number for `Open`; a status other than 0
-ends the channel. A channel is one TCP connection to the endpoint, closed
-when either side sends `Close`. Each side may send 65536 bytes per channel
+ends the channel without `Close`. A channel is one TCP connection to the
+endpoint. Either side ends it with `Close`; the other answers with `Close`
+unless it sent one already, after passing on the bytes it still has. A
+channel number is free again once a side has both sent and received
+`Close`. Each side may send 65536 bytes per channel
 before it waits for `Credit`; the receiver returns credit as it passes bytes
 on. Receivers skip subtypes they do not know.
 
@@ -367,7 +370,7 @@ drained, and a client likewise. Servers bound the open channels per client
 
 The tunnel is offered per announced service, so later side-channel services
 use it the same way. View-only clients get no tunnel. A server parameter
-turns it off.
+turns it off (Xvnc: `FileDropTunnel`).
 
 Until numbers are assigned the implementation uses the private message type
 201 in both directions. The framing follows that of VNC Device Link, so

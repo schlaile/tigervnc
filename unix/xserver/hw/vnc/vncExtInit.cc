@@ -87,6 +87,11 @@ core::StringParameter
                    _("Side channel for files dropped onto the viewer, set by "
                      "the desktop session: [samehost ]URL TOKEN"), "");
 core::BoolParameter
+  fileDropTunnel("FileDropTunnel",
+                 _("Carry connections of viewers to the FileDropEndpoint "
+                   "through the VNC connection when they cannot reach it "
+                   "directly"), true);
+core::BoolParameter
   localhostOnly("localhost",
                 _("Only allow connections from localhost"), false);
 core::StringParameter
@@ -351,6 +356,8 @@ static rfb::DesktopEndpoint parseFileDropEndpoint(const char* value)
   size_t first = 0;
 
   endpoint.service = "file-drop";
+  if (fileDropTunnel)
+    endpoint.flags |= rfb::desktopEndpointTunnel;
 
   while (in >> word)
     words.push_back(word);

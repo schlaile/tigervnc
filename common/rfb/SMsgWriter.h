@@ -72,6 +72,10 @@ namespace rfb {
 
     // writeFence() sends a new fence request or response to the client.
     void writeFence(uint32_t flags, unsigned len, const uint8_t data[]);
+    // writeEndpointTunnel() sends a message for a tunnel channel to the
+    // endpoint of a side-channel service (doc/file-drop.md)
+    void writeEndpointTunnel(uint8_t subtype, uint16_t channel,
+                             const uint8_t* data, size_t len);
 
     // writeEndOfContinuousUpdates() indicates that we have left continuous
     // updates mode.

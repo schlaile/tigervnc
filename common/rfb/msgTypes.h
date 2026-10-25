@@ -28,6 +28,9 @@ namespace rfb {
 
   const int msgTypeEndOfContinuousUpdates = 150;
 
+  // doc/file-drop.md; private value until a number is registered
+  const int msgTypeServerEndpointTunnel = 201;
+
   const int msgTypeServerFence = 248;
 
   // client to server
@@ -41,6 +44,8 @@ namespace rfb {
   const int msgTypeClientCutText = 6;
 
   const int msgTypeEnableContinuousUpdates = 150;
+
+  const int msgTypeClientEndpointTunnel = 201;
 
   const int msgTypeClientFence = 248;
 

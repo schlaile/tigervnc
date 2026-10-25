@@ -27,6 +27,7 @@
 
 #include <rfb/AccessRights.h>
 #include <rfb/DesktopEndpoint.h>
+#include <rfb/EndpointTunnel.h>
 #include <rfb/UpdateTracker.h>
 
 namespace network { class Socket; }
@@ -153,6 +154,16 @@ namespace rfb {
     // of the desktop, to be announced to clients that support it. An
     // endpoint with an empty URL withdraws the service.
     virtual void setDesktopEndpoint(const DesktopEndpoint& endpoint) = 0;
+
+    // Tunnels to side-channel endpoints, for desktops that announce them
+    // with the Tunnel flag: getTunnelFds() gives the descriptors to watch
+    // (call it again before each wait, what to watch for changes),
+    // processTunnelEvent() handles an event on one of them (false: not a
+    // tunnel descriptor), takeClosedTunnelFds() hands over descriptors
+    // of ended channels, which the desktop stops watching and closes.
+    virtual void getTunnelFds(std::list<EndpointTunnel::Fd>* fds) = 0;
+    virtual bool processTunnelEvent(int fd, bool read, bool write) = 0;
+    virtual void takeClosedTunnelFds(std::list<int>* fds) = 0;
 
     // setLEDState() tells the server what the current lock keys LED
     // state is

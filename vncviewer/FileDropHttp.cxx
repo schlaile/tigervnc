@@ -164,8 +164,14 @@ std::string FileDropURL::str() const
   return s + path;
 }
 
+bool FileDropURL::sameOrigin(const FileDropURL& other) const
+{
+  return scheme == other.scheme && host == other.host && port == other.port;
+}
+
 FileDropHttp::FileDropHttp()
-  : sock(nullptr), session(nullptr), creds(nullptr), aborted(false)
+  : tunnelPort(0), sock(nullptr), session(nullptr), creds(nullptr),
+    aborted(false)
 {
 }
 
@@ -240,10 +246,19 @@ bool FileDropHttp::reachable(const FileDropURL& url, int seconds)
   return ok;
 }
 
+void FileDropHttp::setTunnel(const FileDropURL& origin, int port)
+{
+  tunnelOrigin = origin;
+  tunnelPort = port;
+}
+
 void FileDropHttp::connect(const FileDropURL& url)
 {
-  network::TcpSocket* s = new network::TcpSocket(url.host.c_str(),
-                                                 url.port);
+  // Through a tunnel, TLS is still checked against the URL's host
+  bool tunnelled = tunnelPort != 0 && url.sameOrigin(tunnelOrigin);
+  network::TcpSocket* s =
+    tunnelled ? new network::TcpSocket("127.0.0.1", tunnelPort)
+              : new network::TcpSocket(url.host.c_str(), url.port);
   {
     std::lock_guard<std::mutex> guard(lock);
     sock = s;

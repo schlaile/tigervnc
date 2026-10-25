@@ -72,6 +72,7 @@ VNCSConnectionST::VNCSConnectionST(VNCServerST* server_, network::Socket *s,
     pendingSyncFence(false), syncFence(false), fenceFlags(0),
     fenceDataLen(0), fenceData(nullptr), congestionTimer(this),
     losslessTimer(this), server(server_),
+    tunnel(server_->getClosedTunnelFds()),
     updateRenderedCursor(false), removeRenderedCursor(false),
     continuousUpdates(false), encodeManager(this), idleTimer(this),
     pointerEventTime(0), clientHasCursor(false)
@@ -859,6 +860,43 @@ void VNCSConnectionST::supportsDesktopEndpoint()
 {
   for (const DesktopEndpoint& endpoint : server->getDesktopEndpoints())
     writer()->writeDesktopEndpoint(endpoint);
+}
+
+// A message for a tunnel to a side-channel endpoint. Clients that may
+// not use the desktop get no tunnel.
+void VNCSConnectionST::endpointTunnel(uint8_t subtype, uint16_t channel,
+                                      const uint8_t* data, size_t len)
+{
+  static const std::list<DesktopEndpoint> none;
+
+  tunnel.handleMessage(subtype, channel, data, len,
+                       accessCheck(AccessPtrEvents) ?
+                         server->getDesktopEndpoints() : none,
+                       writer());
+}
+
+void VNCSConnectionST::getTunnelFds(std::list<EndpointTunnel::Fd>* fds)
+{
+  if (state() != RFBSTATE_NORMAL)
+    return;
+  tunnel.getFds(fds, !sock->outStream().hasBufferedData());
+}
+
+bool VNCSConnectionST::processTunnelEventOrClose(int fd, bool read,
+                                                 bool write)
+{
+  if (state() != RFBSTATE_NORMAL)
+    return false;
+
+  try {
+    if (!tunnel.handleEvent(fd, read, write, writer(),
+                            !sock->outStream().hasBufferedData()))
+      return false;
+    sock->outStream().flush();
+  } catch (std::exception& e) {
+    close(e.what());
+  }
+  return true;
 }
 
 void VNCSConnectionST::handleTimeout(core::Timer* t)

@@ -184,6 +184,9 @@ bool CMsgReader::readMsg()
     case msgTypeServerFence:
       ret = readFence();
       break;
+    case msgTypeServerEndpointTunnel:
+      ret = readEndpointTunnel();
+      break;
     case msgTypeEndOfContinuousUpdates:
       ret = readEndOfContinuousUpdates();
       break;
@@ -530,6 +533,39 @@ bool CMsgReader::readFence()
   is->readBytes(data, len);
 
   handler->fence(flags, len, data);
+
+  return true;
+}
+
+bool CMsgReader::readEndpointTunnel()
+{
+  uint8_t subtype;
+  uint16_t channel;
+  uint32_t len;
+  std::vector<uint8_t> data;
+
+  if (!is->hasData(1 + 2 + 4))
+    return false;
+
+  is->setRestorePoint();
+
+  subtype = is->readU8();
+  channel = is->readU16();
+  len = is->readU32();
+
+  if (len > (subtype == endpointTunnelData ? endpointTunnelMaxData
+                                           : endpointTunnelMaxPayload))
+    throw protocol_error(_("Too large endpoint tunnel message"));
+
+  if (!is->hasDataOrRestore(len))
+    return false;
+  is->clearRestorePoint();
+
+  data.resize(len);
+  if (len > 0)
+    is->readBytes(data.data(), len);
+
+  handler->endpointTunnel(subtype, channel, data.data(), len);
 
   return true;
 }

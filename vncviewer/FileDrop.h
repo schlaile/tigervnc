@@ -41,6 +41,7 @@
 #include "FileDropHttp.h"
 
 class CConn;
+class FileDropTunnel;
 
 class FileDrop {
 public:
@@ -58,6 +59,10 @@ public:
   // Main thread: files and links dropped at a framebuffer position
   void drop(int x, int y, const std::vector<std::string>& paths,
             const std::vector<std::string>& links);
+
+  // Main thread: an EndpointTunnel message from the server
+  void tunnelMessage(uint8_t subtype, uint16_t channel,
+                     const uint8_t* data, size_t len);
 
   // The parts of a drop, one per line: regular files (plain paths or
   // file:// URIs) and http(s) links (from a browser). False if anything
@@ -94,6 +99,9 @@ private:
 
   FileDropHttp* newHttp();
   void releaseHttp(FileDropHttp* http);
+  // Whether a connection to url comes about (through the tunnel, if the
+  // endpoint is reached that way)
+  bool wayReachable(const FileDropURL& url, int seconds);
 
   // The main thread takes messages and requests from the worker
   // threads with a timer (portable, no FLTK thread support needed)
@@ -108,6 +116,11 @@ private:
   FileDropURL base;
   std::string token;
   uint64_t generation;
+  // Tunnel through RFB (main thread); its port, and whether requests
+  // to the endpoint use it (decided per announcement)
+  FileDropTunnel* tunnel;
+  int tunnelPort;
+  bool tunnelled;
 
   std::atomic<bool> stopping;
   std::thread eventsThread;

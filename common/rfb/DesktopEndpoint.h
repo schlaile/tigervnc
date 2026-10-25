@@ -32,6 +32,9 @@ namespace rfb {
   // The client replaces the host of the URL with the host it used for
   // the RFB connection
   const uint8_t desktopEndpointSameHost = 1 << 0;
+  // The server carries connections to the endpoint through RFB
+  // (EndpointTunnel messages)
+  const uint8_t desktopEndpointTunnel = 1 << 1;
 
   const uint8_t desktopEndpointVersion = 1;
 
@@ -39,6 +42,33 @@ namespace rfb {
   const size_t desktopEndpointMaxService = 64;
   const size_t desktopEndpointMaxURL = 2048;
   const size_t desktopEndpointMaxToken = 1024;
+
+  // EndpointTunnel messages (both directions)
+  enum EndpointTunnelSubtype {
+    endpointTunnelOpen = 0,             // C->S
+    endpointTunnelOpenResult = 1,       // S->C
+    endpointTunnelData = 2,
+    endpointTunnelCredit = 3,
+    endpointTunnelClose = 4,
+  };
+
+  enum EndpointTunnelStatus {
+    endpointTunnelConnected = 0,
+    endpointTunnelRefused = 1,
+    endpointTunnelUnreachable = 2,
+    endpointTunnelTooMany = 3,
+  };
+
+  enum EndpointTunnelCloseReason {
+    endpointTunnelNormal = 0,
+    endpointTunnelError = 1,
+  };
+
+  // Largest Data payload, largest other payload
+  const size_t endpointTunnelMaxData = 4096;
+  const size_t endpointTunnelMaxPayload = 1024;
+  // Bytes each side may send per channel before it waits for Credit
+  const uint32_t endpointTunnelWindow = 65536;
 
   struct DesktopEndpoint {
     DesktopEndpoint() : flags(0) {}

@@ -849,6 +849,34 @@ void CConn::setDesktopEndpoint(const rfb::DesktopEndpoint& endpoint)
 #endif
 }
 
+void CConn::endpointTunnel(uint8_t subtype, uint16_t channel,
+                           const uint8_t* data, size_t len)
+{
+#ifdef HAVE_GNUTLS
+  if (fileDrop)
+    fileDrop->tunnelMessage(subtype, channel, data, len);
+#else
+  (void)subtype;
+  (void)channel;
+  (void)data;
+  (void)len;
+#endif
+}
+
+bool CConn::outputPending()
+{
+  return sock->outStream().hasBufferedData();
+}
+
+void CConn::flushOutput()
+{
+  try {
+    sock->outStream().flush();
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+  }
+}
+
 void CConn::fileDropMessage(const char* text, bool error)
 {
   if (error)
