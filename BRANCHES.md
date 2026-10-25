@@ -19,8 +19,10 @@ There is one code base; branches differ in which features they join and in
 1. Fix or extend a feature in its feature branch (upstream style, no task
    references in its commits).
 2. Merge the feature branch into `wws`.
-3. Merge `wws` into `wws-bookworm-xvnc` (only its `debian/` differs; a
-   conflict there means `debian/` was touched in `wws` by mistake).
+3. Merge `wws` into `wws-bookworm-xvnc`. Only `debian/` differs: `wws`
+   packages the viewer, `wws-bookworm-xvnc` the server, so conflicts in
+   `debian/` are normal. Keep the server's (`git checkout --ours -- debian/…`)
+   and remove files that only the viewer package has.
 4. Server-side changes for stretch are backported by hand to
    `wws-stretch-xvnc` (tigervnc 1.7 is too old to merge into).
 5. Bump the `debian/changelog` of every branch whose package changes, build

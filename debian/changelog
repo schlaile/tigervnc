@@ -1,3 +1,10 @@
+tigervnc-wws (1.16.80+wws3-1) unstable; urgency=medium
+
+  * File drop through the VNC connection when the viewer cannot reach
+    the desktop's endpoint directly (an SSH port forward, for example).
+
+ -- Peter Schlaile <peter@schlaile.de>  Sun, 25 Oct 2026 12:09:19 +0100
+
 tigervnc-wws (1.16.80+wws2-3) unstable; urgency=medium
 
   * Build with the Nettle 3.3 of stretch (base64_decode_update takes
