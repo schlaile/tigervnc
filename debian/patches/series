@@ -65,3 +65,4 @@ wws-file-drop-endpoint.patch
 wws-x509-client-ca.patch
 wws-device-link.patch
 wws-vncconfig-text-targets.patch
+wws-file-drop-tunnel.patch

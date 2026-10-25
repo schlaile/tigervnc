@@ -1,5 +1,14 @@
 tigervnc (1.7.0+dfsg-7+deb9u2+wws5) stretch; urgency=medium
 
+  * Xvnc parameter FileDropTunnel (default on): carry the connections of
+    viewers to the FileDropEndpoint through the VNC connection when they
+    cannot reach it directly (backport from
+    github.com/schlaile/tigervnc, branch file-drop).
+
+ -- Peter Schlaile <peter@schlaile.de>  Sun, 25 Oct 2026 12:13:17 +0100
+
+tigervnc (1.7.0+dfsg-7+deb9u2+wws5) stretch; urgency=medium
+
   * vncconfig answers UTF8_STRING, COMPOUND_TEXT and TEXT as well as STRING
     and lists them under TARGETS (wws-vncconfig-text-targets.patch).  With
     STRING alone pasting from the viewer failed in GTK 3/WebKit (the WWS
