@@ -41,6 +41,8 @@ struct FileDropURL {
   // relative path)
   FileDropURL resolve(const std::string& ref) const;
   std::string str() const;
+  // Same scheme, host and port
+  bool sameOrigin(const FileDropURL& other) const;
 
   std::string scheme;           // "http" or "https"
   std::string host;             // without brackets
@@ -83,6 +85,10 @@ public:
   // Aborts a running request from another thread
   void abort();
 
+  // Connections to URLs of this origin go to a loopback port instead
+  // (a tunnel through RFB, FileDropTunnel); port 0: no tunnel
+  void setTunnel(const FileDropURL& origin, int port);
+
   // Whether a TCP connection to the URL's host and port comes about
   // within the given seconds (a firewall that drops packets would make
   // a request wait for minutes)
@@ -94,6 +100,8 @@ private:
   void writeAll(const void* data, size_t len);
   long readSome(void* data, size_t len);
 
+  FileDropURL tunnelOrigin;
+  int tunnelPort;
   network::TcpSocket* sock;
   void* session;                // gnutls_session_t
   void* creds;                  // gnutls_certificate_credentials_t

@@ -28,6 +28,7 @@ target_link_libraries(rfb ${JPEG_LIBRARIES})
 add_library(rfbserver STATIC
   ClientParams.cxx
   EncodeManager.cxx
+  EndpointTunnel.cxx
   Encoder.cxx
   HextileEncoder.cxx
   JPEGEncoder.cxx

@@ -1,3 +1,11 @@
+tigervnc (1.16.80+wws2-1) bookworm; urgency=medium
+
+  * Merge of wws: file drop through the VNC connection (Xvnc parameter
+    FileDropTunnel) when the viewer cannot reach the endpoint directly,
+    e.g. over an SSH port forward.
+
+ -- Peter Schlaile <peter@schlaile.de>  Sun, 25 Oct 2026 12:08:46 +0100
+
 tigervnc (1.16.80+wws1-1) bookworm; urgency=medium
 
   * Schlaile fork (branch wws-bookworm-xvnc, see BRANCHES.md): the code of

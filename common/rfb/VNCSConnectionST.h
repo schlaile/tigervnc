@@ -27,12 +27,14 @@
 #ifndef __RFB_VNCSCONNECTIONST_H__
 #define __RFB_VNCSCONNECTIONST_H__
 
+#include <list>
 #include <map>
 
 #include <core/Timer.h>
 
 #include <rfb/Congestion.h>
 #include <rfb/EncodeManager.h>
+#include <rfb/EndpointTunnel.h>
 #include <rfb/SConnection.h>
 
 namespace rfb {
@@ -117,6 +119,11 @@ namespace rfb {
 
     network::Socket* getSock() { return sock; }
 
+    // Tunnels to side-channel endpoints (doc/file-drop.md): the
+    // descriptors to watch, and their events (false: not this client's)
+    void getTunnelFds(std::list<EndpointTunnel::Fd>* fds);
+    bool processTunnelEventOrClose(int fd, bool read, bool write);
+
     // Change tracking
 
     void add_changed(const core::Region& region) { updates.add_changed(region); }
@@ -154,6 +161,8 @@ namespace rfb {
     void supportsContinuousUpdates() override;
     void supportsLEDState() override;
     void supportsDesktopEndpoint() override;
+    void endpointTunnel(uint8_t subtype, uint16_t channel,
+                        const uint8_t* data, size_t len) override;
     void supportsDeviceLink() override;
     void handleDeviceLink(uint8_t subtype, uint16_t channel,
                           const uint8_t* data, size_t len) override;
@@ -202,6 +211,7 @@ namespace rfb {
     core::Timer losslessTimer;
 
     VNCServerST* server;
+    EndpointTunnel tunnel;
     SimpleUpdateTracker updates;
     core::Region requested;
     bool updateRenderedCursor, removeRenderedCursor;

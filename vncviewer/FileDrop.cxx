@@ -43,6 +43,7 @@
 
 #include "CConn.h"
 #include "FileDrop.h"
+#include "FileDropTunnel.h"
 #include "parameters.h"
 
 static core::LogWriter vlog("FileDrop");
@@ -51,6 +52,13 @@ static core::LogWriter vlog("FileDrop");
 static FILE* openFile(const std::string& path)
 {
   return fl_fopen(path.c_str(), "rb");
+}
+
+// A host name or address of this machine itself
+static bool isLoopback(const std::string& host)
+{
+  return host == "localhost" || host == "localhost." || host == "::1" ||
+         host.compare(0, 4, "127.") == 0;
 }
 
 static bool statFile(const std::string& path, int64_t* size)
@@ -77,6 +85,9 @@ static const int maxAttempts = 5;
 // how long a way to an upload may take to answer before the next one
 // (upload.fallbacks) is tried
 static const int fallbackProbeSeconds = 5;
+// How long the endpoint may take to accept a connection before the
+// tunnel through RFB is used instead
+static const int tunnelProbeSeconds = 3;
 
 
 // ----------------------------------------------------------------------
@@ -391,7 +402,8 @@ std::string shortURL(const std::string& url)
 // ----------------------------------------------------------------------
 
 FileDrop::FileDrop(CConn* cc_)
-  : cc(cc_), usable(false), generation(0), stopping(false)
+  : cc(cc_), usable(false), generation(0), tunnel(nullptr), tunnelPort(0),
+    tunnelled(false), stopping(false)
 {
   Fl::add_timeout(0.2, handleQueue, this);
 }
@@ -410,6 +422,8 @@ FileDrop::~FileDrop()
     eventsThread.join();
   for (Job& job : jobs)
     job.thread.join();
+
+  delete tunnel;
 }
 
 void FileDrop::setEndpoint(const rfb::DesktopEndpoint& endpoint,
@@ -435,14 +449,28 @@ void FileDrop::setEndpoint(const rfb::DesktopEndpoint& endpoint,
     vlog.error(_("Invalid file drop endpoint: %s"), endpoint.url.c_str());
     return;
   }
+  // The tunnel serves this endpoint and later ones of the connection
+  tunnelPort = 0;
+  tunnelled = false;
+  if (endpoint.flags & rfb::desktopEndpointTunnel) {
+    if (tunnel == nullptr)
+      tunnel = new FileDropTunnel(cc, endpoint.service);
+    tunnelPort = tunnel->port();
+  }
+
+  bool localSocket = rfbHost.empty() || rfbHost[0] == '/';
   if (endpoint.flags & rfb::desktopEndpointSameHost) {
-    // Not for connections over a local socket
-    if (rfbHost.empty() || rfbHost[0] == '/') {
+    if (!localSocket) {
+      url.host = rfbHost;
+    } else if (tunnelPort == 0) {
       vlog.error(_("The file drop endpoint needs the server's host name"));
       return;
     }
-    url.host = rfbHost;
   }
+  // Over a local socket or a loopback address (an SSH port forward,
+  // typically) the endpoint is not reached directly
+  if (tunnelPort != 0 && (localSocket || isLoopback(rfbHost)))
+    tunnelled = true;
   if (url.path.empty() || url.path[url.path.size() - 1] != '/')
     url.path += "/";
 
@@ -567,6 +595,8 @@ FileDropHttp* FileDrop::newHttp()
 {
   FileDropHttp* http = new FileDropHttp;
   std::lock_guard<std::mutex> guard(lock);
+  if (tunnelled)
+    http->setTunnel(base, tunnelPort);
   running.insert(http);
   if (stopping)
     http->abort();
@@ -580,6 +610,23 @@ void FileDrop::releaseHttp(FileDropHttp* http)
     running.erase(http);
   }
   delete http;
+}
+
+bool FileDrop::wayReachable(const FileDropURL& url, int seconds)
+{
+  {
+    std::lock_guard<std::mutex> guard(lock);
+    if (tunnelled && url.sameOrigin(base))
+      return true;
+  }
+  return FileDropHttp::reachable(url, seconds);
+}
+
+void FileDrop::tunnelMessage(uint8_t subtype, uint16_t channel,
+                             const uint8_t* data, size_t len)
+{
+  if (tunnel)
+    tunnel->handleMessage(subtype, channel, data, len);
 }
 
 bool FileDrop::sleepFor(int seconds, uint64_t gen)
@@ -761,7 +808,7 @@ bool FileDrop::upload(const File& file, const FileDropURL& directUrl,
   auto useWay = [&](size_t from) {
     way = from;
     while (way + 1 < ways.size() &&
-           !FileDropHttp::reachable(ways[way].first, fallbackProbeSeconds)) {
+           !wayReachable(ways[way].first, fallbackProbeSeconds)) {
       vlog.info(_("Upload of \"%s\": %s cannot be reached, going on "
                   "through %s"), file.name.c_str(),
                 ways[way].first.host.c_str(), ways[way + 1].first.host.c_str());
@@ -895,6 +942,23 @@ void FileDrop::eventsLoop(uint64_t gen, FileDropURL endpoint,
                           std::string endpointToken)
 {
   int delay = 1;
+
+  // Whether the endpoint is reached directly; if not, the tunnel
+  bool probe;
+  {
+    std::lock_guard<std::mutex> guard(lock);
+    probe = tunnelPort != 0 && !tunnelled;
+  }
+  if (probe && !FileDropHttp::reachable(endpoint, tunnelProbeSeconds)) {
+    std::lock_guard<std::mutex> guard(lock);
+    if (gen == generation)
+      tunnelled = true;
+  }
+  {
+    std::lock_guard<std::mutex> guard(lock);
+    if (tunnelled && gen == generation)
+      vlog.info(_("Dropped files go through the VNC connection"));
+  }
 
   for (;;) {
     {
