@@ -60,6 +60,10 @@ core::IntParameter rfb::Server::frameRate
 ("FrameRate",
  _("The maximum number of updates per second sent to each client"),
  60, 0, INT_MAX);
+core::BoolParameter rfb::Server::noJPEG
+("NoJPEG",
+ _("Never use lossy JPEG compression, even if the client asks for it"),
+ false);
 core::BoolParameter rfb::Server::protocol3_3
 ("Protocol3.3",
  _("Always use protocol version 3.3 for backwards compatibility with "

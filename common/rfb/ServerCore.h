@@ -37,6 +37,7 @@ namespace rfb {
     static core::IntParameter maxIdleTime;
     static core::IntParameter compareFB;
     static core::IntParameter frameRate;
+    static core::BoolParameter noJPEG;
     static core::BoolParameter protocol3_3;
     static core::BoolParameter alwaysShared;
     static core::BoolParameter neverShared;

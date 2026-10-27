@@ -4,12 +4,12 @@ Read [BRANCHES.md](BRANCHES.md) first: which branch holds what, and how a
 change travels from a feature branch to the packages.
 
 - **Where to commit**: features in their feature branch (`file-drop`,
-  `device-link`, `client-cert`), then merge into `wws`, then merge `wws`
-  into `wws-bookworm-xvnc`.  Packaging only in the `debian/` of the branch
+  `device-link`, `client-cert`, `server-nojpeg`), then merge into `wws`, then merge `wws`
+  into `wws-bookworm-xvnc` (keeping its own `debian/`, see BRANCHES.md).  Packaging only in the `debian/` of the branch
   that builds it.  `wws-stretch-xvnc` is tigervnc 1.7: server-side changes
   are backported there by hand.
 - **Worktrees** (on the operator's machine): `~/tigervnc` (file-drop),
-  `~/tigervnc-device-link`, `~/tigervnc-client-cert`, `~/tigervnc-wws`
+  `~/tigervnc-device-link`, `~/tigervnc-client-cert`, `~/tigervnc-nojpeg`, `~/tigervnc-wws`
   (wws), `~/tigervnc-bookworm-xvnc` (wws-bookworm-xvnc),
   `~/tigervnc-stretch-pkg` (wws-stretch-xvnc).
 - **Commit messages**: feature branches in upstream style without task

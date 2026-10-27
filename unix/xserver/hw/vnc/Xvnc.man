@@ -166,6 +166,11 @@ be refused while there is a client active.  When combined with
 \fBNeverShared\fP this means only one client is allowed at a time.
 .
 .TP
+.B \-NoJPEG
+Never use lossy JPEG compression, even if the client asks for it. Lossless
+compression of a typical desktop is often both smaller and exact, which
+helps on slow or metered links. Default is off.
+.TP
 .B \-FrameRate \fIfps\fP
 The maximum number of updates per second sent to each client. If the screen
 updates any faster then those changes will be aggregated and sent in a single
