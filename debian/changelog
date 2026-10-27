@@ -1,3 +1,10 @@
+tigervnc (1.16.80+wws3-1) bookworm; urgency=medium
+
+  * Merge of wws: Xvnc parameter NoJPEG, lossless compression only, for
+    tills used over metered links (mobile data).
+
+ -- Peter Schlaile <peter@schlaile.de>  Tue, 27 Oct 2026 17:20:23 +0100
+
 tigervnc (1.16.80+wws2-1) bookworm; urgency=medium
 
   * Merge of wws: file drop through the VNC connection (Xvnc parameter
