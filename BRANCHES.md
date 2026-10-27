@@ -10,6 +10,7 @@ There is one code base; branches differ in which features they join and in
 | `file-drop` | VNC File Drop, on upstream/master only | – (upstream-bound) | – |
 | `device-link` | VNC Device Link, on upstream/master only | – (upstream-bound) | – |
 | `client-cert` | X.509 client certificates, on upstream/master only | – (upstream-bound) | – |
+| `server-nojpeg` | Xvnc parameter `NoJPEG` (lossless only, for metered links), on upstream/master only | – (upstream-bound) | – |
 | `wws` | upstream/master + merges of all feature branches; CI for Windows and macOS (tags `wws-filedrop-N` make the releases) | `tigervnc-wws-viewer` (viewer only) | stretch-i386, stretch-amd64, bullseye-i386, bullseye-amd64, bookworm-amd64, trixie-amd64 |
 | `wws-bookworm-xvnc` | `wws` + Debian's server packaging (from Debian's tigervnc 1.15) | `tigervnc-standalone-server`, `tigervnc-common`, … replacing Debian's at a higher version | bookworm-amd64 |
 | `wws-stretch-xvnc` | Debian stretch's tigervnc 1.7 + backports of the server sides | the same server packages for stretch | stretch-i386, stretch-amd64 |
