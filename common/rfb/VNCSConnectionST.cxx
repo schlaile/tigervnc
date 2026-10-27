@@ -24,6 +24,8 @@
 
 #include <assert.h>
 
+#include <vector>
+
 #include <core/LogWriter.h>
 #include <core/i18n.h>
 #include <core/string.h>
@@ -512,6 +514,33 @@ void VNCSConnectionST::setPixelFormat(const PixelFormat& pf)
   vlog.info(_("Client pixel format: %s"), buffer);
   setCursor();
   encodeManager.forceRefresh(server->getPixelBuffer()->getRect());
+}
+
+void VNCSConnectionST::setEncodings(int nEncodings, const int32_t* encodings)
+{
+  std::vector<int32_t> lossless;
+
+  if (!Server::noJPEG) {
+    SConnection::setEncodings(nEncodings, encodings);
+    return;
+  }
+
+  // Over slow or metered links, lossless compression of a typical
+  // desktop is often both smaller and exact, so the server can ignore
+  // the client's wish for JPEG
+  for (int i = 0; i < nEncodings; i++) {
+    int32_t e = encodings[i];
+    if ((e == encodingJPEG) ||
+        ((e >= pseudoEncodingQualityLevel0) &&
+         (e <= pseudoEncodingQualityLevel9)) ||
+        ((e >= pseudoEncodingFineQualityLevel0) &&
+         (e <= pseudoEncodingFineQualityLevel100)) ||
+        ((e >= pseudoEncodingSubsamp1X) &&
+         (e <= pseudoEncodingSubsamp16X)))
+      continue;
+    lossless.push_back(e);
+  }
+  SConnection::setEncodings(lossless.size(), lossless.data());
 }
 
 void VNCSConnectionST::pointerEvent(const core::Point& pos,

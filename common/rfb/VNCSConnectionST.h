@@ -127,6 +127,7 @@ namespace rfb {
     void queryConnection(const char* userName) override;
     void clientReady(bool shared) override;
     void setPixelFormat(const PixelFormat& pf) override;
+    void setEncodings(int nEncodings, const int32_t* encodings) override;
     void pointerEvent(const core::Point& pos,
                       uint16_t buttonMask) override;
     void keyEvent(uint32_t keysym, uint32_t keycode,
