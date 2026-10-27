@@ -1,3 +1,11 @@
+tigervnc (1.7.0+dfsg-7+deb9u2+wws6) stretch; urgency=medium
+
+  * Xvnc parameter NoJPEG: lossless compression only, for tills used
+    over metered links (mobile data); backport from branch server-
+    nojpeg.
+
+ -- Peter Schlaile <peter@schlaile.de>  Tue, 27 Oct 2026 17:23:33 +0100
+
 tigervnc (1.7.0+dfsg-7+deb9u2+wws5) stretch; urgency=medium
 
   * Xvnc parameter FileDropTunnel (default on): carry the connections of

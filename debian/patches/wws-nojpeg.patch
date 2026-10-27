@@ -1,0 +1,98 @@
+Description: Xvnc parameter NoJPEG: ignore the client's wish for lossy JPEG
+ compression (lossless only, for metered links), backport from
+ github.com/schlaile/tigervnc, branch server-nojpeg.
+Forwarded: not-needed
+
+--- a/common/rfb/ServerCore.cxx
++++ b/common/rfb/ServerCore.cxx
+@@ -52,6 +52,10 @@ rfb::IntParameter rfb::Server::compareFB
+  "Perform pixel comparison on framebuffer to reduce unnecessary updates "
+  "(0: never, 1: always, 2: auto)",
+  2);
++rfb::BoolParameter rfb::Server::noJPEG
++("NoJPEG",
++ "Never use lossy JPEG compression, even if the client asks for it",
++ false);
+ rfb::BoolParameter rfb::Server::protocol3_3
+ ("Protocol3.3",
+  "Always use protocol version 3.3 for backwards compatibility with "
+--- a/common/rfb/ServerCore.h
++++ b/common/rfb/ServerCore.h
+@@ -38,6 +38,7 @@ namespace rfb {
+     static IntParameter maxIdleTime;
+     static IntParameter clientWaitTimeMillis;
+     static IntParameter compareFB;
++    static BoolParameter noJPEG;
+     static BoolParameter protocol3_3;
+     static BoolParameter alwaysShared;
+     static BoolParameter neverShared;
+--- a/common/rfb/VNCSConnectionST.cxx
++++ b/common/rfb/VNCSConnectionST.cxx
+@@ -22,6 +22,8 @@
+ 
+ #include <sys/time.h>
+ 
++#include <vector>
++
+ #ifdef CONGESTION_DEBUG
+ #include <sys/socket.h>
+ #include <netinet/in.h>
+@@ -506,6 +508,33 @@ void VNCSConnectionST::setPixelFormat(co
+   setCursor();
+ }
+ 
++void VNCSConnectionST::setEncodings(int nEncodings, const rdr::S32* encodings)
++{
++  std::vector<rdr::S32> lossless;
++
++  if (!Server::noJPEG) {
++    SConnection::setEncodings(nEncodings, encodings);
++    return;
++  }
++
++  // Over slow or metered links, lossless compression of a typical
++  // desktop is often both smaller and exact, so the server can ignore
++  // the client's wish for JPEG
++  for (int i = 0; i < nEncodings; i++) {
++    rdr::S32 e = encodings[i];
++    if (((e >= pseudoEncodingQualityLevel0) &&
++         (e <= pseudoEncodingQualityLevel9)) ||
++        ((e >= pseudoEncodingFineQualityLevel0) &&
++         (e <= pseudoEncodingFineQualityLevel100)) ||
++        ((e >= pseudoEncodingSubsamp1X) &&
++         (e <= pseudoEncodingSubsamp16X)))
++      continue;
++    lossless.push_back(e);
++  }
++  SConnection::setEncodings(lossless.size(),
++                            lossless.empty() ? NULL : &lossless[0]);
++}
++
+ void VNCSConnectionST::pointerEvent(const Point& pos, int buttonMask)
+ {
+   pointerEventTime = lastEventTime = time(0);
+--- a/common/rfb/VNCSConnectionST.h
++++ b/common/rfb/VNCSConnectionST.h
+@@ -147,6 +147,7 @@ namespace rfb {
+     virtual void queryConnection(const char* userName);
+     virtual void clientInit(bool shared);
+     virtual void setPixelFormat(const PixelFormat& pf);
++    virtual void setEncodings(int nEncodings, const rdr::S32* encodings);
+     virtual void pointerEvent(const Point& pos, int buttonMask);
+     virtual void keyEvent(rdr::U32 key, bool down);
+     virtual void clientCutText(const char* str, int len);
+--- a/unix/xserver/hw/vnc/Xvnc.man
++++ b/unix/xserver/hw/vnc/Xvnc.man
+@@ -203,6 +203,12 @@ Always use protocol version 3.3 for back
+ clients (default is off).
+ .
+ .TP
++.B \-NoJPEG
++Never use lossy JPEG compression, even if the client asks for it. Lossless
++compression of a typical desktop is often both smaller and exact, which
++helps on slow or metered links (default is off).
++.
++.TP
+ .B \-CompareFB
+ Perform pixel comparison on framebuffer to reduce unnecessary updates (default
+ is on).
