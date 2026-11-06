@@ -1,3 +1,12 @@
+tigervnc (1.16.80+wws4-1) bookworm; urgency=medium
+
+  * No tigervnc-viewer any more: the viewer for the WWS is tigervnc-wws-
+    viewer (branch wws), which brings its own menu entry and
+    translations and owns the command vncviewer. An installed tigervnc-
+    viewer 1.16.80+wws3 stays until it is removed.
+
+ -- Peter Schlaile <peter@schlaile.de>  Fri, 06 Nov 2026 16:09:42 +0100
+
 tigervnc (1.16.80+wws3-1) bookworm; urgency=medium
 
   * Merge of wws: Xvnc parameter NoJPEG, lossless compression only, for

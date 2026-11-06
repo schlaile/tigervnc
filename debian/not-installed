@@ -4,3 +4,9 @@ usr/libexec/tigervncserver
 usr/lib/xorg/protocol.txt
 usr/lib/xorg/modules/extensions/libvnc.la
 var/lib/xkb/README.compiled
+usr/bin/xtigervncviewer
+usr/share/applications/xtigervncviewer.desktop
+usr/share/metainfo/org.tigervnc.vncviewer.metainfo.xml
+usr/share/man/man1/xtigervncviewer.1.gz
+usr/share/icons/hicolor/*/apps/tigervnc.*
+usr/share/locale/*/LC_MESSAGES/tigervnc.mo
