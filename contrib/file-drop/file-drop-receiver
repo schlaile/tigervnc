@@ -26,6 +26,10 @@ directory (default ~/Downloads).
     file-drop-receiver [--port 5560] [--dir ~/Downloads] [--accept '*.jpg,*.pdf']
                        [--no-announce]
     file-drop-receiver --open URL [NAME]   ask the viewers to open URL
+    file-drop-receiver --open-file PATH [NAME]
+                                           share a local file for some
+                                           minutes and ask the viewers to
+                                           open it
 
 Plain HTTP; put it behind a TLS proxy, or use it on trusted networks only.
 """
@@ -35,6 +39,7 @@ import fnmatch
 import hashlib
 import http.server
 import json
+import mimetypes
 import os
 import queue
 import re
@@ -48,6 +53,7 @@ import time
 
 TUS_VERSION = "1.0.0"
 OFFER_TTL = 3600
+SHARE_TTL = 600
 CHUNK = 1 << 16
 
 
@@ -59,6 +65,7 @@ class State:
         self.lock = threading.Lock()
         self.uploads = {}      # id -> dict
         self.listeners = []    # queues of open event streams
+        self.shares = {}       # id -> (path, name, expiry)
 
     def broadcast(self, event, data):
         with self.lock:
@@ -178,8 +185,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
                               for _ in links]
         self.json_reply(200, reply)
 
+    def do_HEAD(self):
+        self.do_GET()
+
+    def share(self, share_id):
+        with self.state.lock:
+            s = self.state.shares.get(share_id)
+        if not s or s[2] < time.time():
+            return self.json_reply(404, {"error": "not found"})
+        path, name = s[0], s[1]
+        try:
+            size = os.path.getsize(path)
+            f = open(path, "rb")
+        except OSError:
+            return self.json_reply(404, {"error": "not found"})
+        with f:
+            self.send_response(200)
+            self.send_header("Content-Type", mimetypes.guess_type(name)[0]
+                             or "application/octet-stream")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            if self.command == "HEAD":
+                return
+            while True:
+                data = f.read(CHUNK)
+                if not data:
+                    break
+                self.wfile.write(data)
+
     def do_GET(self):
-        if self.path != "/desktop/events":
+        m = re.fullmatch(r"/share/([0-9a-f]{32})", self.path)
+        if m:
+            return self.share(m.group(1))
+        if self.command == "HEAD" or self.path != "/desktop/events":
             return self.json_reply(404, {"error": "not found"})
         if not self.endpoint_auth():
             return
@@ -195,6 +234,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             while True:
                 try:
                     event, data = q.get(timeout=20)
+                    if data.get("url", "").startswith("/"):
+                        data = dict(data, url="http://%s%s" % (
+                            self.headers.get("Host", ""), data["url"]))
                     msg = "event: %s\ndata: %s\n\n" % (event, json.dumps(data))
                 except queue.Empty:
                     msg = ": ping\n\n"
@@ -315,6 +357,15 @@ def control_loop(state, path):
             if len(parts) >= 2 and parts[0] == "open":
                 state.broadcast("open", {"url": parts[1],
                                          "name": parts[2] if len(parts) > 2 else ""})
+            elif len(parts) >= 2 and parts[0] == "open-file":
+                # relative: each viewer gets it with the host it used
+                share_id = secrets.token_hex(16)
+                name = parts[2] if len(parts) > 2 else os.path.basename(parts[1])
+                with state.lock:
+                    state.shares[share_id] = (parts[1], name,
+                                              time.time() + SHARE_TTL)
+                state.broadcast("open", {"url": "/share/" + share_id,
+                                         "name": name})
 
 
 def vncconfig_set(value):
@@ -331,12 +382,18 @@ def main():
     ap.add_argument("--no-announce", action="store_true",
                     help="only print the FileDropEndpoint value")
     ap.add_argument("--open", nargs="+", metavar=("URL", "NAME"))
+    ap.add_argument("--open-file", nargs="+", metavar=("PATH", "NAME"))
     args = ap.parse_args()
 
-    if args.open:
+    if args.open or args.open_file:
+        if args.open:
+            line = "open %s\n" % " ".join(args.open)
+        else:
+            line = "open-file %s\n" % " ".join(
+                [os.path.abspath(args.open_file[0])] + args.open_file[1:])
         s = socket.socket(socket.AF_UNIX)
         s.connect(control_path())
-        s.sendall(("open %s\n" % " ".join(args.open)).encode())
+        s.sendall(line.encode())
         return
 
     os.makedirs(args.dir, exist_ok=True)
