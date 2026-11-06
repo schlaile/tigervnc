@@ -299,7 +299,8 @@ data: {"url": "https://host:5560/view/2b9d…", "name": "Invoice 4711.pdf"}
 - `open`: show this document on the local machine. Clients open only `https`
   and `http` URLs. By default they ask the user, at least the first time per
   endpoint. They never pass the URL to anything except the system's default
-  handler (for example, nothing that runs local files).
+  handler (for example, nothing that runs local files). Over the tunnel,
+  documents of the endpoint itself take another way (see below).
 
 Clients ignore events they do not know. When the stream breaks, they open it
 again with a growing delay. `401` means that the token is no longer valid:
@@ -325,6 +326,20 @@ above, end to end between client and endpoint; RFB only carries the bytes.
   own ways as before; over an SSH forward the client usually still reaches
   a public relay of the media server on the Internet, so the bulk of the
   bytes need not pass through RFB.
+- **Documents to open.** An `open` URL of the endpoint's origin is out of
+  the browser's reach as well. With an `http` endpoint the client gives
+  the browser the same path on its local end of the tunnel
+  (`http://127.0.0.1:<port>/…`), so documents stream as on a direct
+  connection; receivers must therefore not depend on the `Host` header
+  for these URLs. With `https` that address would not match the
+  certificate, so the client fetches the document itself through the
+  tunnel (same TLS checks as for uploads), stores it in a private
+  directory and opens the file with the system's default application.
+  To keep that from running anything, it takes only types without active
+  content (PDF, images, plain text, audio, video, office documents
+  without macros), with the file name extension from the
+  `Content-Type`, never from the name; the files are removed when the
+  connection ends. URLs of other origins go to the browser unchanged.
 - **When.** The client probes the endpoint as it probes upload ways (a
   connection within a few seconds). If that fails and the server has set
   `Tunnel`, it uses the tunnel for this endpoint until the next

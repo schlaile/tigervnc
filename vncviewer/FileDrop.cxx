@@ -40,6 +40,7 @@
 #include <core/LogWriter.h>
 #include <core/i18n.h>
 #include <core/string.h>
+#include <core/xdgdirs.h>
 
 #include "CConn.h"
 #include "FileDrop.h"
@@ -397,7 +398,114 @@ std::string shortURL(const std::string& url)
   return url.substr(0, end + 1) + "...";
 }
 
+// Documents fetched through the tunnel are opened with the system's
+// default application for their type, so only types without active
+// content are opened, and the extension comes from the type alone
+std::string openableExtension(const std::string& contentType)
+{
+  static const char* const types[][2] = {
+    { "application/pdf", "pdf" },
+    { "image/jpeg", "jpg" }, { "image/png", "png" },
+    { "image/gif", "gif" }, { "image/webp", "webp" },
+    { "image/tiff", "tif" },
+    { "text/plain", "txt" }, { "text/csv", "csv" },
+    { "video/mp4", "mp4" }, { "video/quicktime", "mov" },
+    { "video/webm", "webm" },
+    { "audio/mpeg", "mp3" }, { "audio/wav", "wav" },
+    { "audio/ogg", "ogg" },
+    { "application/vnd.oasis.opendocument.text", "odt" },
+    { "application/vnd.oasis.opendocument.spreadsheet", "ods" },
+    { "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx" },
+    { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx" },
+  };
+  std::string type = contentType.substr(0, contentType.find(';'));
+  while (!type.empty() && type.back() == ' ')
+    type.pop_back();
+  for (char& c : type) {
+    if (c >= 'A' && c <= 'Z')
+      c = c - 'A' + 'a';
+  }
+  for (const auto& t : types) {
+    if (type == t[0])
+      return t[1];
+  }
+  return "";
 }
+
+// A file name for a fetched document: the name the desktop gave it,
+// made safe, with the extension of its type
+std::string documentName(const std::string& name, const std::string& ext)
+{
+  std::string n = baseName(name);
+  for (char& c : n) {
+    if ((unsigned char)c < 0x20 || strchr("<>:\"/\\|?*", c) != nullptr)
+      c = '_';
+  }
+  while (!n.empty() && (n[0] == '.' || n[0] == ' '))
+    n.erase(0, 1);
+  if (n.size() > 100) {
+    size_t len = 100;
+    while (len > 0 && ((unsigned char)n[len] & 0xc0) == 0x80)
+      len--;
+    n.resize(len);
+  }
+  while (!n.empty() && (n.back() == '.' || n.back() == ' '))
+    n.pop_back();
+  if (n.empty())
+    n = _("Document");
+
+  std::string suffix = "." + ext;
+  std::string tail = n.size() >= suffix.size() ?
+                     n.substr(n.size() - suffix.size()) : "";
+  for (char& c : tail) {
+    if (c >= 'A' && c <= 'Z')
+      c = c - 'A' + 'a';
+  }
+  if (tail != suffix)
+    n += suffix;
+  return n;
+}
+
+std::string uniquePath(const std::string& dir, const std::string& name)
+{
+  size_t dot = name.rfind('.');
+  std::string stem = name.substr(0, dot), ext = name.substr(dot);
+  std::string path = dir + "/" + name;
+  for (int n = 2; fl_access(path.c_str(), 0) == 0; n++)
+    path = dir + "/" + stem + " (" + std::to_string(n) + ")" + ext;
+  return path;
+}
+
+// file: URI of a local path (UTF-8)
+std::string fileURI(std::string path)
+{
+  static const char hex[] = "0123456789ABCDEF";
+  std::string uri = "file://";
+
+  for (char& c : path) {
+    if (c == '\\')
+      c = '/';
+  }
+  if (path.empty() || path[0] != '/')
+    uri += "/";                 // C:/...
+  for (unsigned char c : path) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || strchr("-._~/:", c) != nullptr) {
+      uri += c;
+    } else {
+      uri += '%';
+      uri += hex[c >> 4];
+      uri += hex[c & 15];
+    }
+  }
+  return uri;
+}
+
+}
+
+// The FileDrop objects that exist (main thread): a dialog's nested
+// event loop may outlive the connection
+static std::set<FileDrop*> instances;
 
 // ----------------------------------------------------------------------
 
@@ -405,6 +513,7 @@ FileDrop::FileDrop(CConn* cc_)
   : cc(cc_), usable(false), generation(0), tunnel(nullptr), tunnelPort(0),
     tunnelled(false), stopping(false)
 {
+  instances.insert(this);
   Fl::add_timeout(0.2, handleQueue, this);
 }
 
@@ -424,6 +533,10 @@ FileDrop::~FileDrop()
     job.thread.join();
 
   delete tunnel;
+
+  for (const std::string& path : downloaded)
+    fl_unlink(path.c_str());
+  instances.erase(this);
 }
 
 void FileDrop::setEndpoint(const rfb::DesktopEndpoint& endpoint,
@@ -510,6 +623,15 @@ void FileDrop::drop(int x, int y, const std::vector<std::string>& paths,
   if (!usable || (paths.empty() && links.empty()))
     return;
 
+  FileDropURL b = base;
+  std::string t = token;
+  startJob([this, x, y, paths, links, b, t]() {
+    dropJob(x, y, paths, links, b, t);
+  });
+}
+
+void FileDrop::startJob(std::function<void()> work)
+{
   // Finished jobs can go
   for (std::list<Job>::iterator it = jobs.begin(); it != jobs.end(); ) {
     if (!*it->done) {
@@ -523,10 +645,8 @@ void FileDrop::drop(int x, int y, const std::vector<std::string>& paths,
   Job job;
   job.done = std::make_shared<std::atomic<bool>>(false);
   std::shared_ptr<std::atomic<bool>> done = job.done;
-  FileDropURL b = base;
-  std::string t = token;
-  job.thread = std::thread([this, x, y, paths, links, b, t, done]() {
-    dropJob(x, y, paths, links, b, t);
+  job.thread = std::thread([work, done]() {
+    work();
     *done = true;
   });
   jobs.push_back(std::move(job));
@@ -1069,6 +1189,8 @@ void FileDrop::handleQueue(void* data)
   for (const QueueItem& item : items) {
     if (item.kind == QueueItem::Open)
       opens.push_back(item);
+    else if (item.kind == QueueItem::OpenFile)
+      openURI(fileURI(item.text));    // fetched after the user said yes
     else
       self->cc->fileDropMessage(item.text.c_str(),
                                 item.kind == QueueItem::Error);
@@ -1082,16 +1204,35 @@ void FileDrop::handleQueue(void* data)
     std::lock_guard<std::mutex> guard(self->queueLock);
     self->queue.splice(self->queue.begin(), opens);
   }
-  std::string endpoint;
+  std::string endpoint, uri = open.text;
+  FileDropURL url;
+  bool fetch = false;
   {
     std::lock_guard<std::mutex> guard(self->lock);
     endpoint = self->base.str() + " " + self->token;
+    // Documents of the endpoint are out of the browser's reach as well
+    // when only the tunnel reaches it: plain HTTP goes through the
+    // tunnel's loopback port, HTTPS (whose certificate does not fit
+    // that address) is fetched by the viewer
+    if (self->tunnelled && url.parse(open.text) &&
+        url.sameOrigin(self->base)) {
+      if (url.scheme == "http")
+        uri = "http://127.0.0.1:" + std::to_string(self->tunnelPort) +
+              url.path;
+      else
+        fetch = true;
+    }
   }
-  openDocument(open.text, open.name, endpoint);
+  if (!confirmOpen(open.text, open.name, endpoint))
+    return;
+  if (!fetch)
+    openURI(uri);
+  else if (instances.count(self))
+    self->download(url, open.name);
 }
 
-void FileDrop::openDocument(const std::string& url, const std::string& name,
-                            const std::string& endpoint)
+bool FileDrop::confirmOpen(const std::string& url, const std::string& name,
+                           const std::string& endpoint)
 {
   // FileDropOpen=Once: endpoints (URL and token) the user said yes to.
   // Not kept in the object: it may be gone after the dialog below.
@@ -1103,7 +1244,7 @@ void FileDrop::openDocument(const std::string& url, const std::string& name,
   // (FileDropOpen); "Always" is for desktops whose links are trusted.
   if (fileDropOpen == "Never") {
     vlog.info(_("Not opening \"%s\" (FileDropOpen=Never)"), what.c_str());
-    return;
+    return false;
   }
   bool ask = fileDropOpen == "Ask" ||
              (fileDropOpen == "Once" && !confirmed.count(endpoint));
@@ -1115,11 +1256,97 @@ void FileDrop::openDocument(const std::string& url, const std::string& name,
                            _("Cancel"), nullptr, _("Open"),
                            what.c_str(), shortURL(url).c_str());
     if (choice != 2)
-      return;
+      return false;
     confirmed.insert(endpoint);
   }
+  return true;
+}
 
+void FileDrop::openURI(const std::string& uri)
+{
   char msg[256];
-  if (!fl_open_uri(url.c_str(), msg, sizeof(msg)))
-    vlog.error(_("Could not open %s: %s"), url.c_str(), msg);
+  if (!fl_open_uri(uri.c_str(), msg, sizeof(msg)))
+    vlog.error(_("Could not open %s: %s"), uri.c_str(), msg);
+}
+
+void FileDrop::download(const FileDropURL& url, const std::string& name)
+{
+  std::lock_guard<std::mutex> guard(lock);
+  startJob([this, url, name]() { downloadJob(url, name); });
+}
+
+void FileDrop::downloadJob(FileDropURL url, std::string name)
+{
+  std::string what = name.empty() ? shortURL(url.str()) : name;
+  const char* stateDir = core::getvncstatedir();
+  if (stateDir == nullptr) {
+    message(_("Could not determine the directory for fetched documents"),
+            true);
+    return;
+  }
+  std::string dir = std::string(stateDir) + "/open";
+  if (core::mkdir_p(dir.c_str(), 0700) == -1) {
+    message(core::format(_("Could not create %s"), dir.c_str()), true);
+    return;
+  }
+
+  uint8_t rnd[8];
+  std::string part = dir + "/.part-";
+  gnutls_rnd(GNUTLS_RND_NONCE, rnd, sizeof(rnd));
+  for (uint8_t b : rnd)
+    part += core::format("%02x", b);
+  FILE* f = fl_fopen(part.c_str(), "wb");
+  if (f == nullptr) {
+    message(core::format(_("Could not create %s"), part.c_str()), true);
+    return;
+  }
+
+  message(core::format(_("Fetching \"%s\" through the VNC connection"),
+                       what.c_str()), false);
+  bool ok = false;
+  std::string type;
+  FileDropHttp* http = newHttp();
+  try {
+    FileDropResponse resp = http->request(
+      "GET", url, std::map<std::string, std::string>(), "", nullptr, -1,
+      [f](const char* p, size_t n) -> bool {
+        return fwrite(p, 1, n, f) == n;
+      });
+    ok = resp.status == 200;
+    type = resp.headers["content-type"];
+    if (!ok)
+      vlog.error(_("Fetching %s: HTTP status %d"), url.str().c_str(),
+                 resp.status);
+  } catch (std::exception& e) {
+    vlog.error(_("Fetching %s: %s"), url.str().c_str(), e.what());
+  }
+  releaseHttp(http);
+  if (fclose(f) != 0)
+    ok = false;
+
+  std::string ext = openableExtension(type);
+  if (ok && ext.empty()) {
+    vlog.error(_("Not opening a document of type \"%s\""), type.c_str());
+    ok = false;
+  }
+  std::string path;
+  if (ok) {
+    path = uniquePath(dir, documentName(name, ext));
+    ok = fl_rename(part.c_str(), path.c_str()) == 0;
+  }
+  if (!ok) {
+    fl_unlink(part.c_str());
+    message(core::format(_("Could not open \"%s\""), what.c_str()), true);
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> guard(lock);
+    downloaded.push_back(path);
+  }
+  QueueItem item;
+  item.kind = QueueItem::OpenFile;
+  item.text = path;
+  std::lock_guard<std::mutex> guard(queueLock);
+  queue.push_back(item);
 }

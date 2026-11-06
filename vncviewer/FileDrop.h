@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include <atomic>
+#include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -96,6 +97,12 @@ private:
 
   void message(const std::string& text, bool error);
   void openRequest(const std::string& url, const std::string& name);
+  // A document of the endpoint that only the tunnel reaches: fetched
+  // into a local file, which is then opened
+  void download(const FileDropURL& url, const std::string& name);
+  void downloadJob(FileDropURL url, std::string name);
+  // A worker thread; the lock must be held
+  void startJob(std::function<void()> work);
 
   FileDropHttp* newHttp();
   void releaseHttp(FileDropHttp* http);
@@ -106,8 +113,10 @@ private:
   // The main thread takes messages and requests from the worker
   // threads with a timer (portable, no FLTK thread support needed)
   static void handleQueue(void* data);
-  static void openDocument(const std::string& url, const std::string& name,
-                           const std::string& endpoint);
+  // Whether the user lets the desktop open this document (FileDropOpen)
+  static bool confirmOpen(const std::string& url, const std::string& name,
+                          const std::string& endpoint);
+  static void openURI(const std::string& uri);
 
   CConn* cc;
 
@@ -130,10 +139,12 @@ private:
   };
   std::list<Job> jobs;
   std::set<FileDropHttp*> running;
+  // Documents fetched for opening, removed at the end
+  std::list<std::string> downloaded;
 
   struct QueueItem {
-    enum { Message, Error, Open } kind;
-    std::string text;
+    enum { Message, Error, Open, OpenFile } kind;
+    std::string text;           // message, URL or local path
     std::string name;
   };
   std::mutex queueLock;
