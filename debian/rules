@@ -1,10 +1,15 @@
 #!/usr/bin/make -f
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
+PKG := debian/tigervnc-wws-viewer
+TMP := $(CURDIR)/debian/tmp
+
 %:
 	dh $@ --buildsystem=cmake
 
 # Only the viewer: the X server would need the complete Xorg source.
+# Translations go to a directory of their own, so that they do not
+# collide with the tigervnc.mo of the distribution's viewer.
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		-DBUILD_VIEWER=ON \
@@ -13,10 +18,36 @@ override_dh_auto_configure:
 		-DENABLE_H264=OFF \
 		-DENABLE_SYSTEMD=OFF \
 		-DINSTALL_SYSTEMD_UNITS=OFF \
-		-DENABLE_NLS=OFF
+		-DENABLE_NLS=ON \
+		-DCMAKE_INSTALL_LOCALEDIR=share/tigervnc-wws-viewer/locale
 
+# Everything under names of its own next to the distribution's viewer:
+# program, manual page, menu entry and icons (tigervnc-wws), translations.
+# The command vncviewer comes through update-alternatives (postinst).
 override_dh_auto_install:
-	install -D -m 0755 obj-$(DEB_HOST_GNU_TYPE)/vncviewer/vncviewer \
-		debian/tigervnc-wws-viewer/usr/bin/tigervnc-wws-viewer
+	dh_auto_install --destdir=$(TMP)
+	install -D -m 0755 $(TMP)/usr/bin/vncviewer \
+		$(PKG)/usr/bin/tigervnc-wws-viewer
+	install -D -m 0644 $(TMP)/usr/share/man/man1/vncviewer.1 \
+		$(PKG)/usr/share/man/man1/tigervnc-wws-viewer.1
+	mkdir -p $(PKG)/usr/share/tigervnc-wws-viewer
+	cp -a $(TMP)/usr/share/tigervnc-wws-viewer/locale \
+		$(PKG)/usr/share/tigervnc-wws-viewer/
+	sed -e 's|^Exec=.*|Exec=/usr/bin/tigervnc-wws-viewer|' \
+	    -e 's|^Icon=.*|Icon=tigervnc-wws|' \
+	    -e 's|^\(Name\(\[[^]]*\]\)\{0,1\}=.*\)$$|\1 (WWS)|' \
+		$(TMP)/usr/share/applications/vncviewer.desktop \
+		>$(CURDIR)/debian/tigervnc-wws-viewer.desktop.gen
+	install -D -m 0644 $(CURDIR)/debian/tigervnc-wws-viewer.desktop.gen \
+		$(PKG)/usr/share/applications/tigervnc-wws-viewer.desktop
+	rm -f $(CURDIR)/debian/tigervnc-wws-viewer.desktop.gen
+	install -D -m 0644 $(TMP)/usr/share/icons/hicolor/scalable/apps/tigervnc.svg \
+		$(PKG)/usr/share/icons/hicolor/scalable/apps/tigervnc-wws.svg
+	for res in 16 22 24 32 48 64 128; do \
+	  f=$(TMP)/usr/share/icons/hicolor/$${res}x$${res}/apps/tigervnc.png; \
+	  test -f $$f || continue; \
+	  install -D -m 0644 $$f \
+	    $(PKG)/usr/share/icons/hicolor/$${res}x$${res}/apps/tigervnc-wws.png; \
+	done
 
 override_dh_auto_test:

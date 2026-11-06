@@ -39,4 +39,5 @@ Description: TigerVNC viewer for the WWS
  the server announces), VNC Device Link (serial ports, network devices and
  files of this computer for the remote desktop) and X.509 client
  certificates.  Installed as tigervnc-wws-viewer next to the viewer of the
- distribution.
+ distribution, with its own menu entry and German translation; the command
+ vncviewer starts it (update-alternatives, priority 90).

@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+# vncviewer starts this viewer: priority 90, above the 80 of the
+# distribution's tigervnc-viewer, with the same slave names.
+if [ "$1" = "configure" ]; then
+  update-alternatives \
+    --install /usr/bin/vncviewer vncviewer /usr/bin/tigervnc-wws-viewer 90 \
+    --slave /usr/bin/xvncviewer xvncviewer /usr/bin/tigervnc-wws-viewer \
+    --slave /usr/share/man/man1/vncviewer.1.gz vncviewer.1.gz \
+            /usr/share/man/man1/tigervnc-wws-viewer.1.gz \
+    --slave /usr/share/man/man1/xvncviewer.1.gz xvncviewer.1.gz \
+            /usr/share/man/man1/tigervnc-wws-viewer.1.gz
+fi
+
+#DEBHELPER#
+
+exit 0

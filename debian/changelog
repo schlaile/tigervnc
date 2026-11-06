@@ -1,3 +1,13 @@
+tigervnc-wws (1.16.80+wws5-1) unstable; urgency=medium
+
+  * The viewer package is complete on its own: German and the other
+    translations (in /usr/share/tigervnc-wws-viewer/locale, apart from
+    the distribution's), a menu entry "TigerVNC (WWS)" with icons and a
+    manual page, and the command vncviewer starts it (update-
+    alternatives, priority 90 above the 80 of tigervnc-viewer).
+
+ -- Peter Schlaile <peter@schlaile.de>  Fri, 06 Nov 2026 16:06:00 +0100
+
 tigervnc-wws (1.16.80+wws4-1) unstable; urgency=medium
 
   * File drop over the VNC connection: documents the desktop opens (PDFs
