@@ -1,8 +1,8 @@
 #!/usr/bin/make -f
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+include /usr/share/dpkg/architecture.mk
 
 PKG := debian/tigervnc-wws-viewer
-TMP := $(CURDIR)/debian/tmp
 
 %:
 	dh $@ --buildsystem=cmake
@@ -21,32 +21,37 @@ override_dh_auto_configure:
 		-DENABLE_NLS=ON \
 		-DCMAKE_INSTALL_LOCALEDIR=share/tigervnc-wws-viewer/locale
 
+# Only what the package needs: the AppStream file of "make all" needs ITS
+# rules that the msgfmt of stretch does not have, and we do not ship it.
+override_dh_auto_build:
+	dh_auto_build -- vncviewer translations desktop
+
 # Everything under names of its own next to the distribution's viewer:
 # program, manual page, menu entry and icons (tigervnc-wws), translations.
 # The command vncviewer comes through update-alternatives (postinst).
+# Copied from the build directory, since "make install" builds "all".
+BLD := obj-$(DEB_HOST_GNU_TYPE)
+LOCALEDIR := $(PKG)/usr/share/tigervnc-wws-viewer/locale
+
 override_dh_auto_install:
-	dh_auto_install --destdir=$(TMP)
-	install -D -m 0755 $(TMP)/usr/bin/vncviewer \
+	install -D -m 0755 $(BLD)/vncviewer/vncviewer \
 		$(PKG)/usr/bin/tigervnc-wws-viewer
-	install -D -m 0644 $(TMP)/usr/share/man/man1/vncviewer.1 \
+	install -D -m 0644 vncviewer/vncviewer.man \
 		$(PKG)/usr/share/man/man1/tigervnc-wws-viewer.1
-	mkdir -p $(PKG)/usr/share/tigervnc-wws-viewer
-	cp -a $(TMP)/usr/share/tigervnc-wws-viewer/locale \
-		$(PKG)/usr/share/tigervnc-wws-viewer/
+	for lang in $$(cat po/LINGUAS); do \
+	  install -D -m 0644 $(BLD)/po/$$lang.mo \
+	    $(LOCALEDIR)/$$lang/LC_MESSAGES/tigervnc.mo; \
+	done
+	mkdir -p $(PKG)/usr/share/applications
 	sed -e 's|^Exec=.*|Exec=/usr/bin/tigervnc-wws-viewer|' \
 	    -e 's|^Icon=.*|Icon=tigervnc-wws|' \
 	    -e 's|^\(Name\(\[[^]]*\]\)\{0,1\}=.*\)$$|\1 (WWS)|' \
-		$(TMP)/usr/share/applications/vncviewer.desktop \
-		>$(CURDIR)/debian/tigervnc-wws-viewer.desktop.gen
-	install -D -m 0644 $(CURDIR)/debian/tigervnc-wws-viewer.desktop.gen \
-		$(PKG)/usr/share/applications/tigervnc-wws-viewer.desktop
-	rm -f $(CURDIR)/debian/tigervnc-wws-viewer.desktop.gen
-	install -D -m 0644 $(TMP)/usr/share/icons/hicolor/scalable/apps/tigervnc.svg \
+		$(BLD)/vncviewer/vncviewer.desktop \
+		>$(PKG)/usr/share/applications/tigervnc-wws-viewer.desktop
+	install -D -m 0644 media/icons/tigervnc.svg \
 		$(PKG)/usr/share/icons/hicolor/scalable/apps/tigervnc-wws.svg
 	for res in 16 22 24 32 48 64 128; do \
-	  f=$(TMP)/usr/share/icons/hicolor/$${res}x$${res}/apps/tigervnc.png; \
-	  test -f $$f || continue; \
-	  install -D -m 0644 $$f \
+	  install -D -m 0644 media/icons/tigervnc_$$res.png \
 	    $(PKG)/usr/share/icons/hicolor/$${res}x$${res}/apps/tigervnc-wws.png; \
 	done
 
