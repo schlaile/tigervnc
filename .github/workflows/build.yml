@@ -400,10 +400,12 @@ jobs:
   # macOS: the app with the Homebrew libraries copied into it
   dist-macos:
     if: startsWith(github.ref, 'refs/tags/wws-') || github.ref == 'refs/heads/wws'
-    runs-on: macos-latest
+    # pinned: the Homebrew libraries in the app are built for the runner's
+    # macOS, so the runner decides the minimum version (checked in Bundle)
+    runs-on: macos-15
     timeout-minutes: 30
     env:
-      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v6
       - name: Install dependencies
@@ -440,6 +442,19 @@ jobs:
               grep -E '/opt/homebrew|/usr/local/(opt|Cellar)'; then
             exit 1
           fi
+          # nothing may need a newer macOS than the one the app promises
+          for f in $app/Contents/MacOS/vncviewer $app/Contents/Frameworks/*; do
+            otool -l "$f" | awk -v f="$f" -v max="$MACOSX_DEPLOYMENT_TARGET" '
+              function v(s, a) { split(s, a, "."); return a[1] * 100 + a[2] }
+              /cmd LC_VERSION_MIN_MACOSX/ { old = 1 }
+              $1 == "minos" || (old && $1 == "version") {
+                old = 0
+                if (v($2) > v(max)) { print f ": needs macOS " $2; bad = 1 }
+              }
+              END { exit bad }'
+          done
+          /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string $MACOSX_DEPLOYMENT_TARGET" \
+            $app/Contents/Info.plist
 
           # "TigerVNC für die WWS": the same viewer, started with
           # FileDropOpen=Always, with the WWS icon (.github/dist/wws-vnc.svg)
@@ -500,4 +515,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
-            --notes "TigerVNC with file drop (VNC File Drop), build $GITHUB_SHA. Unsigned test build, not an official TigerVNC release."
+            --notes "TigerVNC with file drop (VNC File Drop), build $GITHUB_SHA. Requires macOS 15 or later. Unsigned test build, not an official TigerVNC release."
