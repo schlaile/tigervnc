@@ -78,7 +78,14 @@ target_link_libraries(vncviewer ${FLTK_LIBRARIES})
 
 if(GNUTLS_FOUND)
   # Files dropped onto the viewer (doc/file-drop.md)
-  target_sources(vncviewer PRIVATE FileDrop.cxx FileDropHttp.cxx FileDropTunnel.cxx)
+  target_sources(vncviewer PRIVATE FileDrop.cxx FileDropHttp.cxx FileDropTunnel.cxx
+                 FileDropApp.cxx)
+  if(WIN32)
+    target_link_libraries(vncviewer shlwapi)
+  elseif(APPLE)
+    target_sources(vncviewer PRIVATE FileDropApp.mm)
+    target_link_libraries(vncviewer "-weak_framework UniformTypeIdentifiers")
+  endif()
   target_include_directories(vncviewer SYSTEM PUBLIC ${GNUTLS_INCLUDE_DIR})
   target_link_libraries(vncviewer ${GNUTLS_LIBRARIES})
   # FIXME: Hack to block it marking gnutls_free() as dllimport

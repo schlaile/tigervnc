@@ -293,7 +293,8 @@ response is a stream of [Server-Sent Events](https://html.spec.whatwg.org/multip
 
 ```
 event: open
-data: {"url": "https://host:5560/view/2b9d…", "name": "Invoice 4711.pdf"}
+data: {"url": "https://host:5560/view/2b9d…", "name": "Invoice 4711.pdf",
+       "type": "application/pdf"}
 ```
 
 - `open`: show this document on the local machine. Clients open only `https`
@@ -308,6 +309,12 @@ data: {"url": "https://host:5560/view/2b9d…", "name": "Invoice 4711.pdf"}
   from the name, keeps the file in a private directory and removes it when
   the connection ends. Other types, and URLs of other origins, go to the
   browser. Over the tunnel, see below.
+  The optional `type` is the document's media type as far as the desktop
+  knows it. With a `video/` type the client may instead hand the URL to
+  the local application for that type, if that takes URLs, so that the
+  video streams rather than being fetched first; servers should keep such
+  URLs valid long enough for playback with pauses. The type only selects
+  the application, the client still takes the URL as for any document.
 
 Clients ignore events they do not know. When the stream breaks, they open it
 again with a growing delay. `401` means that the token is no longer valid:

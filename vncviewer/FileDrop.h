@@ -96,7 +96,8 @@ private:
   bool sleepFor(int seconds, uint64_t gen = 0);
 
   void message(const std::string& text, bool error);
-  void openRequest(const std::string& url, const std::string& name);
+  void openRequest(const std::string& url, const std::string& name,
+                   const std::string& type);
   // A document of the endpoint that only the tunnel reaches: fetched
   // into a local file, which is then opened
   void download(const FileDropURL& url, const std::string& name,
@@ -148,6 +149,7 @@ private:
     enum { Message, Error, Open, OpenFile, OpenURI } kind;
     std::string text;           // message, URL or local path
     std::string name;
+    std::string type;           // of an open request, if the desktop said
   };
   std::mutex queueLock;
   std::list<QueueItem> queue;
