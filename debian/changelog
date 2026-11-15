@@ -4,6 +4,9 @@ tigervnc-wws (1.16.80+wws6-1) unstable; urgency=medium
     application (a PDF to the PDF viewer, not the browser); videos go to
     the default player as URLs and stream.  Opening a second document in
     one connection works again.
+  * The WWS icon (as for Windows and macOS) for the menu entry and the
+    windows, with a window class of its own, and the menu entry starts the
+    viewer with -FileDropOpen=Always like "TigerVNC für die WWS" there.
 
  -- Peter Schlaile <peter@schlaile.de>  Sun, 15 Nov 2026 18:31:07 +0100
 

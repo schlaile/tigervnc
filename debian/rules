@@ -43,15 +43,16 @@ override_dh_auto_install:
 	    $(LOCALEDIR)/$$lang/LC_MESSAGES/tigervnc.mo; \
 	done
 	mkdir -p $(PKG)/usr/share/applications
-	sed -e 's|^Exec=.*|Exec=/usr/bin/tigervnc-wws-viewer|' \
+	sed -e 's|^Exec=.*|Exec=/usr/bin/tigervnc-wws-viewer -FileDropOpen=Always|' \
 	    -e 's|^Icon=.*|Icon=tigervnc-wws|' \
+	    -e 's|^StartupWMClass=.*|StartupWMClass=tigervnc-wws-viewer|' \
 	    -e 's|^\(Name\(\[[^]]*\]\)\{0,1\}=.*\)$$|\1 (WWS)|' \
 		$(BLD)/vncviewer/vncviewer.desktop \
 		>$(PKG)/usr/share/applications/tigervnc-wws-viewer.desktop
-	install -D -m 0644 media/icons/tigervnc.svg \
+	install -D -m 0644 .github/dist/wws-vnc.svg \
 		$(PKG)/usr/share/icons/hicolor/scalable/apps/tigervnc-wws.svg
-	for res in 16 22 24 32 48 64 128; do \
-	  install -D -m 0644 media/icons/tigervnc_$$res.png \
+	for res in 16 22 24 32 48 64 128 256; do \
+	  install -D -m 0644 .github/dist/wws-vnc_$$res.png \
 	    $(PKG)/usr/share/icons/hicolor/$${res}x$${res}/apps/tigervnc-wws.png; \
 	done
 

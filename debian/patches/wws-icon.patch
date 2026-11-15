@@ -1,0 +1,26 @@
+Description: the WWS icon for the windows, and a window class of its own
+ The package installs the WWS icon as tigervnc-wws; with its own window
+ class the desktop matches the windows to the "TigerVNC (WWS)" entry, not
+ to the one of Debian's tigervnc-viewer.
+Forwarded: not-needed
+
+--- a/vncviewer/vncviewer.cxx
++++ b/vncviewer/vncviewer.cxx
+@@ -260,7 +260,7 @@ static void init_fltk()
+ 
+   // Proper Gnome Shell integration requires that we set a sensible
+   // WM_CLASS for the window.
+-  Fl_Window::default_xclass("vncviewer");
++  Fl_Window::default_xclass("tigervnc-wws-viewer");
+ 
+   // Set the default icon for all windows.
+ #ifdef WIN32
+@@ -291,7 +291,7 @@ static void init_fltk()
+       char icon_path[PATH_MAX];
+       bool exists;
+ 
+-      sprintf(icon_path, "%s/icons/hicolor/%dx%d/apps/tigervnc.png",
++      sprintf(icon_path, "%s/icons/hicolor/%dx%d/apps/tigervnc-wws.png",
+               CMAKE_INSTALL_FULL_DATADIR, icon_size, icon_size);
+ 
+       struct stat st;
