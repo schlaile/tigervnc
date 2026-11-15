@@ -1,3 +1,12 @@
+tigervnc-wws (1.16.80+wws6-1) unstable; urgency=medium
+
+  * File drop: documents the desktop opens go to the local default
+    application (a PDF to the PDF viewer, not the browser); videos go to
+    the default player as URLs and stream.  Opening a second document in
+    one connection works again.
+
+ -- Peter Schlaile <peter@schlaile.de>  Sun, 15 Nov 2026 18:31:07 +0100
+
 tigervnc-wws (1.16.80+wws5-2) unstable; urgency=medium
 
   * Build only the viewer, the translations and the menu entry, and
