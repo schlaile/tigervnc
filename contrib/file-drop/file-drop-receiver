@@ -364,8 +364,11 @@ def control_loop(state, path):
                 with state.lock:
                     state.shares[share_id] = (parts[1], name,
                                               time.time() + SHARE_TTL)
-                state.broadcast("open", {"url": "/share/" + share_id,
-                                         "name": name})
+                event = {"url": "/share/" + share_id, "name": name}
+                ctype = mimetypes.guess_type(name)[0]
+                if ctype:
+                    event["type"] = ctype
+                state.broadcast("open", event)
 
 
 def vncconfig_set(value):

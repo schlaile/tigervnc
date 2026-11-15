@@ -20,6 +20,7 @@
 #include <config.h>
 #endif
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -44,6 +45,7 @@
 
 #include "CConn.h"
 #include "FileDrop.h"
+#include "FileDropApp.h"
 #include "FileDropTunnel.h"
 #include "parameters.h"
 
@@ -1108,7 +1110,8 @@ void FileDrop::eventsLoop(uint64_t gen, FileDropURL endpoint,
               if (event == "open" && !data.empty()) {
                 try {
                   JValue v = JParser(data).parse();
-                  openRequest(v["url"].string, v["name"].string);
+                  openRequest(v["url"].string, v["name"].string,
+                              v["type"].string);
                 } catch (std::exception& e) {
                   vlog.error("%s", e.what());
                 }
@@ -1157,7 +1160,8 @@ void FileDrop::message(const std::string& text, bool error)
   queue.push_back(item);
 }
 
-void FileDrop::openRequest(const std::string& url, const std::string& name)
+void FileDrop::openRequest(const std::string& url, const std::string& name,
+                           const std::string& type)
 {
   if (!isHttpURL(url)) {
     vlog.error(_("Ignoring request to open a non-HTTP URL"));
@@ -1167,6 +1171,7 @@ void FileDrop::openRequest(const std::string& url, const std::string& name)
   item.kind = QueueItem::Open;
   item.text = url;
   item.name = name;
+  item.type = type;
   std::lock_guard<std::mutex> guard(queueLock);
   queue.push_back(item);
 }
@@ -1191,6 +1196,8 @@ void FileDrop::handleQueue(void* data)
       opens.push_back(item);
     else if (item.kind == QueueItem::OpenFile)
       openURI(fileURI(item.text));    // fetched after the user said yes
+    else if (item.kind == QueueItem::OpenURI)
+      openURI(item.text);             // the user said yes already
     else
       self->cc->fileDropMessage(item.text.c_str(),
                                 item.kind == QueueItem::Error);
@@ -1210,25 +1217,32 @@ void FileDrop::handleQueue(void* data)
   {
     std::lock_guard<std::mutex> guard(self->lock);
     endpoint = self->base.str() + " " + self->token;
-    // Documents of the endpoint are out of the browser's reach as well
-    // when only the tunnel reaches it: plain HTTP goes through the
-    // tunnel's loopback port, HTTPS (whose certificate does not fit
-    // that address) is fetched by the viewer
-    if (self->tunnelled && url.parse(open.text) &&
-        url.sameOrigin(self->base)) {
-      if (url.scheme == "http")
-        uri = "http://127.0.0.1:" + std::to_string(self->tunnelPort) +
-              url.path;
-      else
-        fetch = true;
+    // Documents of the endpoint are fetched by the viewer and opened
+    // with the application the system has for their type (a PDF viewer
+    // rather than the browser).  Types it does not open itself go to
+    // the browser; when only the tunnel reaches the endpoint, plain
+    // HTTP goes through the tunnel's loopback port and HTTPS (whose
+    // certificate does not fit that address) is not opened at all.
+    if (url.parse(open.text) && url.sameOrigin(self->base)) {
+      fetch = true;
+      if (self->tunnelled) {
+        if (url.scheme == "http")
+          uri = "http://127.0.0.1:" + std::to_string(self->tunnelPort) +
+                url.path;
+        else
+          uri.clear();
+      }
     }
   }
   if (!confirmOpen(open.text, open.name, endpoint))
     return;
   if (!fetch)
     openURI(uri);
+  else if (!uri.empty() && open.type.compare(0, 6, "video/") == 0 &&
+           openWithDefaultApp(uri, open.type, openableExtension(open.type)))
+    ;                           // the player streams it
   else if (instances.count(self))
-    self->download(url, open.name);
+    self->download(url, open.name, uri);
 }
 
 bool FileDrop::confirmOpen(const std::string& url, const std::string& name,
@@ -1269,13 +1283,17 @@ void FileDrop::openURI(const std::string& uri)
     vlog.error(_("Could not open %s: %s"), uri.c_str(), msg);
 }
 
-void FileDrop::download(const FileDropURL& url, const std::string& name)
+void FileDrop::download(const FileDropURL& url, const std::string& name,
+                        const std::string& browserURI)
 {
   std::lock_guard<std::mutex> guard(lock);
-  startJob([this, url, name]() { downloadJob(url, name); });
+  startJob([this, url, name, browserURI]() {
+    downloadJob(url, name, browserURI);
+  });
 }
 
-void FileDrop::downloadJob(FileDropURL url, std::string name)
+void FileDrop::downloadJob(FileDropURL url, std::string name,
+                           std::string browserURI)
 {
   std::string what = name.empty() ? shortURL(url.str()) : name;
   const char* stateDir = core::getvncstatedir();
@@ -1285,7 +1303,7 @@ void FileDrop::downloadJob(FileDropURL url, std::string name)
     return;
   }
   std::string dir = std::string(stateDir) + "/open";
-  if (core::mkdir_p(dir.c_str(), 0700) == -1) {
+  if (core::mkdir_p(dir.c_str(), 0700) == -1 && errno != EEXIST) {
     message(core::format(_("Could not create %s"), dir.c_str()), true);
     return;
   }
@@ -1301,8 +1319,14 @@ void FileDrop::downloadJob(FileDropURL url, std::string name)
     return;
   }
 
-  message(core::format(_("Fetching \"%s\" through the VNC connection"),
-                       what.c_str()), false);
+  bool viaTunnel;
+  {
+    std::lock_guard<std::mutex> guard(lock);
+    viaTunnel = tunnelled;
+  }
+  if (viaTunnel)
+    message(core::format(_("Fetching \"%s\" through the VNC connection"),
+                         what.c_str()), false);
   bool ok = false;
   std::string type;
   FileDropHttp* http = newHttp();
@@ -1326,6 +1350,16 @@ void FileDrop::downloadJob(FileDropURL url, std::string name)
 
   std::string ext = openableExtension(type);
   if (ok && ext.empty()) {
+    fl_unlink(part.c_str());
+    if (!browserURI.empty()) {
+      // Not a type to open from a local file: the browser shows it
+      QueueItem item;
+      item.kind = QueueItem::OpenURI;
+      item.text = browserURI;
+      std::lock_guard<std::mutex> guard(queueLock);
+      queue.push_back(item);
+      return;
+    }
     vlog.error(_("Not opening a document of type \"%s\""), type.c_str());
     ok = false;
   }
