@@ -45,6 +45,7 @@
 
 #include "CConn.h"
 #include "FileDrop.h"
+#include "FileDropApp.h"
 #include "FileDropTunnel.h"
 #include "parameters.h"
 
@@ -1109,7 +1110,8 @@ void FileDrop::eventsLoop(uint64_t gen, FileDropURL endpoint,
               if (event == "open" && !data.empty()) {
                 try {
                   JValue v = JParser(data).parse();
-                  openRequest(v["url"].string, v["name"].string);
+                  openRequest(v["url"].string, v["name"].string,
+                              v["type"].string);
                 } catch (std::exception& e) {
                   vlog.error("%s", e.what());
                 }
@@ -1158,7 +1160,8 @@ void FileDrop::message(const std::string& text, bool error)
   queue.push_back(item);
 }
 
-void FileDrop::openRequest(const std::string& url, const std::string& name)
+void FileDrop::openRequest(const std::string& url, const std::string& name,
+                           const std::string& type)
 {
   if (!isHttpURL(url)) {
     vlog.error(_("Ignoring request to open a non-HTTP URL"));
@@ -1168,6 +1171,7 @@ void FileDrop::openRequest(const std::string& url, const std::string& name)
   item.kind = QueueItem::Open;
   item.text = url;
   item.name = name;
+  item.type = type;
   std::lock_guard<std::mutex> guard(queueLock);
   queue.push_back(item);
 }
@@ -1234,6 +1238,9 @@ void FileDrop::handleQueue(void* data)
     return;
   if (!fetch)
     openURI(uri);
+  else if (!uri.empty() && open.type.compare(0, 6, "video/") == 0 &&
+           openWithDefaultApp(uri, open.type, openableExtension(open.type)))
+    ;                           // the player streams it
   else if (instances.count(self))
     self->download(url, open.name, uri);
 }
