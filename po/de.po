@@ -1164,3 +1164,39 @@ msgstr ""
 #: vncviewer/vncviewer.desktop.in.in:3
 msgid "Remote desktop viewer"
 msgstr "Betrachter für ferne Bildschirme"
+
+#: vncviewer/UpdateCheck.cxx
+msgid "Look for a new version of the viewer at start (at most once a day)"
+msgstr "Beim Start nach einer neuen Version des Viewers sehen (höchstens einmal am Tag)"
+
+#: vncviewer/UpdateCheck.cxx
+msgid "Downloading the new version of the viewer..."
+msgstr "Die neue Version des Viewers wird geladen ..."
+
+#: vncviewer/UpdateCheck.cxx
+msgid "Could not download the new version: %s"
+msgstr "Die neue Version konnte nicht geladen werden: %s"
+
+#: vncviewer/UpdateCheck.cxx
+msgid "The downloaded installer does not match the signed update description; it is not run."
+msgstr "Das geladene Installationsprogramm passt nicht zur signierten Update-Beschreibung; es wird nicht ausgeführt."
+
+#: vncviewer/UpdateCheck.cxx
+msgid "A new version of the viewer is available (%s).\n\nInstall it now? The viewer starts again afterwards."
+msgstr "Eine neue Version des Viewers ist verfügbar (%s).\n\nJetzt installieren? Der Viewer startet danach neu."
+
+#: vncviewer/UpdateCheck.cxx
+msgid "Later"
+msgstr "Später"
+
+#: vncviewer/UpdateCheck.cxx
+msgid "Install"
+msgstr "Installieren"
+
+#: vncviewer/UpdateCheck.cxx
+msgid "A new version of the viewer is available (%s)."
+msgstr "Eine neue Version des Viewers ist verfügbar (%s)."
+
+#: vncviewer/UpdateCheck.cxx
+msgid "Open download page"
+msgstr "Downloadseite öffnen"
