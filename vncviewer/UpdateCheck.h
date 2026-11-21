@@ -21,7 +21,8 @@
 // a small text signed with Ed25519; the viewer trusts only the key it was
 // built with, nothing on the system.  On Windows an installed viewer
 // fetches the installer, checks it against the description and runs it;
-// elsewhere it points the user to the download page.
+// on macOS it points the user to the download page.  Only for these two:
+// elsewhere a package manager brings new versions.
 
 #ifndef __UPDATECHECK_H__
 #define __UPDATECHECK_H__
@@ -64,7 +65,7 @@ bool decodeBase64(const std::string& in, std::string* out);
 
 std::string sha256Hex(const std::string& data);
 
-// GET over HTTPS (platform specific); false on any error, an HTTP status
+// GET over HTTPS (WinHTTP, NSURLSession); false on any error, an HTTP status
 // other than 200, or more than maxSize bytes
 bool updateHttpGet(const std::string& url, int timeoutSeconds,
                    size_t maxSize, std::string* body, std::string* error);
