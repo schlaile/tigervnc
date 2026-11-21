@@ -34,11 +34,6 @@
 #ifdef WIN32
 #include <windows.h>
 #include <winhttp.h>
-#elif !defined(__APPLE__)
-#include <fcntl.h>
-#include <signal.h>
-#include <unistd.h>
-#include <sys/wait.h>
 #endif
 
 #include <nettle/eddsa.h>
@@ -278,74 +273,6 @@ bool updateHttpGet(const std::string& url, int timeoutSeconds,
   if (session)
     WinHttpCloseHandle(session);
   return ok;
-}
-
-#elif !defined(__APPLE__)
-
-// Elsewhere through curl, if it is there (the update is only a notice)
-bool updateHttpGet(const std::string& url, int timeoutSeconds,
-                   size_t maxSize, std::string* body, std::string* error)
-{
-  if (url.compare(0, 8, "https://") != 0) {
-    *error = "not an https URL";
-    return false;
-  }
-  int fds[2];
-  if (pipe(fds) == -1) {
-    *error = strerror(errno);
-    return false;
-  }
-  std::string timeout = std::to_string(timeoutSeconds);
-  pid_t pid = fork();
-  if (pid == -1) {
-    *error = strerror(errno);
-    close(fds[0]);
-    close(fds[1]);
-    return false;
-  }
-  if (pid == 0) {
-    dup2(fds[1], 1);
-    int null = open("/dev/null", O_RDWR);
-    if (null != -1) {
-      dup2(null, 0);
-      dup2(null, 2);
-    }
-    for (int fd = 3; fd < 1024; fd++)
-      close(fd);
-    execlp("curl", "curl", "-s", "-f", "-L", "--proto", "=https",
-           "--max-time", timeout.c_str(), "--", url.c_str(), (char*)nullptr);
-    _exit(127);
-  }
-  close(fds[1]);
-  body->clear();
-  bool big = false;
-  char buf[16384];
-  ssize_t n;
-  while ((n = read(fds[0], buf, sizeof(buf))) > 0 ||
-         (n == -1 && errno == EINTR)) {
-    if (n <= 0)
-      continue;
-    if (body->size() + n > maxSize) {
-      big = true;
-      break;
-    }
-    body->append(buf, n);
-  }
-  close(fds[0]);
-  if (big)
-    kill(pid, SIGTERM);
-  int status;
-  while (waitpid(pid, &status, 0) == -1 && errno == EINTR)
-    ;
-  if (big) {
-    *error = "too large";
-    return false;
-  }
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-    *error = "curl failed";
-    return false;
-  }
-  return true;
 }
 
 #endif

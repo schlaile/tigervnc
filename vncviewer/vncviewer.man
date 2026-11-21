@@ -404,11 +404,12 @@ Default is \fBCtrl,Alt\fP.
 .
 .TP
 .B \-UpdateCheck
-Only in builds configured with an update URL: at start, at most once a
+Only in Windows and macOS builds configured with an update URL: at
+start, at most once a
 day, look for a newer version in a description signed with the key the
 viewer was built with. On Windows an installed viewer offers to download
 and run the installer (checked against the description) and then starts
-again; elsewhere it points to the download page. Default is on.
+again; on macOS it points to the download page. Default is on.
 .
 .TP
 .B \-UseIPv4
