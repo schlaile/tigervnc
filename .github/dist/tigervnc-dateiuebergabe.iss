@@ -58,3 +58,12 @@ Name: "{userdesktop}\TigerVNC für die WWS"; Filename: "{app}\vncviewer.exe"; Pa
 
 [Run]
 Filename: "{app}\vncviewer.exe"; Parameters: "-FileDropOpen=Always"; Description: "TigerVNC jetzt starten"; Flags: nowait postinstall skipifsilent
+; the viewer's update check (UpdateCheck.cxx) runs this installer with
+; /SILENT /RELAUNCH=1 /RELAUNCHARGS="<its arguments>" and has exited
+Filename: "{app}\vncviewer.exe"; Parameters: "{param:RELAUNCHARGS|}"; Flags: nowait; Check: Relaunch
+
+[Code]
+function Relaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+end;

@@ -11,6 +11,7 @@ There is one code base; branches differ in which features they join and in
 | `device-link` | VNC Device Link, on upstream/master only | – (upstream-bound) | – |
 | `client-cert` | X.509 client certificates, on upstream/master only | – (upstream-bound) | – |
 | `server-nojpeg` | Xvnc parameter `NoJPEG` (lossless only, for metered links), on upstream/master only | – (upstream-bound) | – |
+| `update-check` | Viewer looks for new versions in a signed update description (built only with `UPDATE_URL`), on upstream/master only; `wws` turns it on for the Windows and macOS downloads | – | – |
 | `wws` | upstream/master + merges of all feature branches; CI for Windows and macOS (tags `wws-filedrop-N` make the releases) | `tigervnc-wws-viewer` (viewer only) | stretch-i386, stretch-amd64, bullseye-i386, bullseye-amd64, bookworm-amd64, trixie-amd64 |
 | `wws-bookworm-xvnc` | `wws` + Debian's server packaging (from Debian's tigervnc 1.15) | `tigervnc-standalone-server`, `tigervnc-common`, … replacing Debian's at a higher version | bookworm-amd64 |
 | `wws-stretch-xvnc` | Debian stretch's tigervnc 1.7 + backports of the server sides | the same server packages for stretch | stretch-i386, stretch-amd64 |
@@ -31,3 +32,16 @@ There is one code base; branches differ in which features they join and in
 
 Never stack one feature branch on another, never commit features directly
 to `wws` or the packaging branches.
+
+## Update check of the downloads
+
+The Windows and macOS builds of a tag `wws-filedrop-N` are release N of
+the update check (`update-check` branch, `.github/dist/update-cmake-args.sh`):
+they read https://ps.schlaile.de/tigervnc/download/dateien/update.txt and
+its signature `update.txt.sig`, made by ps-wws-webseite
+`tools/tigervnc-downloads.sh` with the private key that belongs to
+`.github/dist/update-key.txt`.  The key never goes to GitHub or the web
+server.  An installed Windows viewer runs the new installer itself
+(`/SILENT /RELAUNCH=1`, see `tigervnc-dateiuebergabe.iss`); macOS only
+points to the download page.  Debian packages have no update check (APT).
+

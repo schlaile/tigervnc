@@ -358,7 +358,8 @@ jobs:
         run: |
           cmake -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release \
             -DENABLE_NLS=ON -DENABLE_GNUTLS=ON -DENABLE_NETTLE=ON \
-            -DBUILD_VIEWER=ON -S . -B build
+            -DBUILD_VIEWER=ON $(sh .github/dist/update-cmake-args.sh) \
+            -S . -B build
       - name: Build
         run: make -C build vncviewer translations
       - name: Collect
@@ -418,7 +419,8 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_NLS=ON \
             -DCMAKE_PREFIX_PATH="$(brew --prefix jpeg-turbo)" \
             -DENABLE_GNUTLS=ON -DENABLE_NETTLE=ON -DENABLE_H264=OFF \
-            -DBUILD_VIEWER=ON -S . -B build
+            -DBUILD_VIEWER=ON $(sh .github/dist/update-cmake-args.sh) \
+            -S . -B build
       - name: Build
         run: make -C build vncviewer translations
       - name: Bundle
