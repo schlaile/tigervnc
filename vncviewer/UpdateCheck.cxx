@@ -43,6 +43,7 @@
 
 #include <nettle/eddsa.h>
 #include <nettle/sha2.h>
+#include <nettle/version.h>
 
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
@@ -102,7 +103,11 @@ std::string sha256Hex(const std::string& data)
   uint8_t digest[SHA256_DIGEST_SIZE];
   sha256_init(&ctx);
   sha256_update(&ctx, data.size(), (const uint8_t*)data.data());
+#if NETTLE_VERSION_MAJOR >= 4
+  sha256_digest(&ctx, digest);
+#else
   sha256_digest(&ctx, sizeof(digest), digest);
+#endif
   std::string hex;
   for (uint8_t b : digest) {
     static const char digits[] = "0123456789abcdef";
