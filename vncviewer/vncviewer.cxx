@@ -66,6 +66,9 @@
 #include "ServerDialog.h"
 #include "touch.h"
 #include "vncviewer.h"
+#ifdef UPDATE_URL
+#include "UpdateCheck.h"
+#endif
 
 #ifdef WIN32
 #include "resource.h"
@@ -672,6 +675,12 @@ int main(int argc, char** argv)
   potentiallyLoadConfigurationFile(vncServerName);
 
   create_base_dirs();
+
+#ifdef UPDATE_URL
+  // Before connecting: the installer replaces this program
+  if (!listenMode && checkForUpdate(argc, argv))
+    return 0;
+#endif
 
   network::Socket* sock = nullptr;
 
